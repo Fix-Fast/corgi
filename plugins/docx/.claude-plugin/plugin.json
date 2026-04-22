@@ -1,6 +1,6 @@
 {
   "name": "docx",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drive Microsoft Word live from Claude Code via the Carson local Word bridge. Layers on top of Claude Code's built-in docx skill.",
   "homepage": "https://github.com/Fix-Fast/corgi",
   "authors": [
