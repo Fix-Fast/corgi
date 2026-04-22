@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "carson-word-bridge": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "carson-word-bridge-mcp"],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "corgi",
+  "owner": {
+    "name": "Fix-Fast",
+    "url": "https://github.com/Fix-Fast"
+  },
+  "plugins": [
+    {
+      "name": "docx",
+      "source": ".",
+      "description": "Drive Microsoft Word live from Claude Code via the Carson local Word bridge. Layers on top of Claude Code's built-in docx skill.",
+      "version": "0.1.0"
+    }
+  ]
+}
