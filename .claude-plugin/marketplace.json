@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "docx",
-      "source": ".",
+      "source": "./plugins/docx",
       "description": "Drive Microsoft Word live from Claude Code via the Carson local Word bridge. Layers on top of Claude Code's built-in docx skill.",
       "version": "0.1.0"
     }
