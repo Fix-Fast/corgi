@@ -5,14 +5,14 @@ description: "Use this skill when the user wants Claude to drive a live Microsof
 
 # Word bridge — live Word control via MCP
 
-This skill covers the live-document workflow: Claude drives an open Word document via the `carson-word-bridge` MCP server, which talks over `127.0.0.1` to the Carson Word add-in task pane running inside Word.
+This skill covers the live-document workflow: Claude drives an open Word document via the `carson-word-bridge` MCP server, which talks over `127.0.0.1` to the Carson Word add-in runtime running inside Word.
 
 Use this skill when the user wants Claude to **act on a Word document that is open right now**. For offline `.docx` work (create, read, or edit a file without Word running), use Anthropic's `docx` skill (from the `document-skills` plugin in `anthropics/skills`) instead — the two skills compose.
 
 ## Prerequisites
 
 1. Carson desktop is running locally (hosts the bridge on `127.0.0.1:3137`).
-2. The Carson Word add-in is installed and the task pane is open in at least one document.
+2. The Carson Word add-in is installed and connected for at least one document. The add-in runs headlessly; a visible task pane is not required.
 3. The `carson-word-bridge` MCP server is connected (shipped with this plugin).
 
 If any of these is missing, call `bridge_status` first — it returns health + queue counters and will surface the failure mode.
@@ -26,12 +26,12 @@ The `carson-word-bridge` MCP server exposes these tools. Prefer the higher-level
 - `list_documents` — enumerate open Word documents the bridge can see.
 - `refresh_doc_state` — recompute compact state for the active document (call after external edits).
 - `inspect_selection` — what the user currently has selected.
-- `read_doc_section` — read a section by heading or paragraph range.
+- `read_doc_section` — read a section by heading or inclusive paragraph range.
 - `search_doc_text` — literal-text search across the active document.
 - `snapshot_document` — capture a labeled snapshot (e.g. `before` / `after`) for diff/verification.
 
 **Editing**
-- `apply_formatting` — structured formatting ops (headings, bold, styles, etc.).
+- `apply_formatting` — structured formatting ops (headings, bold, styles, etc.). Paragraph ranges are zero-based and inclusive at both ends.
 - `execute_office_js` — escape hatch: run arbitrary office.js against the document. Use sparingly.
 - `set_track_changes` — toggle Word Track Changes.
 - `add_note` — attach a comment/note.
@@ -43,6 +43,8 @@ The `carson-word-bridge` MCP server exposes these tools. Prefer the higher-level
 ## Operating guidance
 
 - **Always read before you write.** Call `read_doc_section` or `inspect_selection` before applying edits, so you're acting on current state.
+- **Treat paragraph ranges as inclusive.** `paragraph_start: 1, paragraph_end: 2` targets paragraphs 1 and 2. Use the returned `resolved_start` / `resolved_end` values to confirm what was read.
+- **For style operations, prefer the `style` field.** `apply_formatting` accepts `{type:"paragraph_style", style:"Normal"}` and `{type:"paragraph_style", value:"Normal"}`, but `style` is clearer and should be the default.
 - **Use snapshots for non-trivial edits.** `snapshot_document` with `label="before"`, do the edit, `snapshot_document` with `label="after"`. This lets you recover and lets the user audit.
 - **Prefer `apply_formatting` over `execute_office_js`.** The structured tool handles the common cases safely; only drop to office.js for things it can't express.
 - **Turn on Track Changes for redlines.** Call `set_track_changes` with `enabled=true` before redline-style edits so the user can review them in Word.
@@ -67,5 +69,6 @@ If uncertain, call `bridge_status` first. If it's healthy, default to `word-brid
 ## Troubleshooting
 
 - **Bridge unreachable** — confirm Carson desktop is running; the bridge listens on `127.0.0.1:3137`.
-- **No active document** — `list_documents` returns empty. Ask the user to open a document with the add-in task pane visible.
+- **No active document** — `list_documents` returns empty. Ask the user to open a document in Word and click the Carson ribbon button to connect it, or reconnect if the document was previously disconnected.
+- **Tool call failed** — inspect `structuredContent.error` first. Bridge tool failures are returned as MCP tool results with `isError: true`, not always protocol errors. The normalized error shape is `{code, message, debugInfo, stack, status?}`.
 - **Edits not showing** — call `refresh_doc_state`; the document may have been edited externally.

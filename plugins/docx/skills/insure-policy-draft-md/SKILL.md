@@ -23,7 +23,7 @@ Compose a Corgi-Tech CGL policy as a single markdown file, then render to canoni
 ## Requirements
 
 - `pandoc` on PATH (macOS: `brew install pandoc`).
-- `uv` on PATH (for the formatter CLI).
+- `insure-policy-format` available in this plugin for the final canonicalization pass.
 
 ## Why this flow exists
 
@@ -132,13 +132,7 @@ Run pandoc to convert markdown to DOCX. **Critical flag:** disable pandoc's `fan
 pandoc -f markdown-fancy_lists-startnum <working-dir>/draft.md -o <working-dir>/draft.docx
 ```
 
-Run the formatter (same plugin, sibling skill — absolute path is fine):
-
-```bash
-uv run /Users/milanb/Workable/corgi/plugins/docx/skills/insure-policy-format/scripts/format.py \
-  <working-dir>/draft.docx \
-  -o <output-path>
-```
+Invoke the `insure-policy-format` skill to canonicalize `<working-dir>/draft.docx` into `<output-path>`. Do not run the formatter script directly from this skill; the formatter skill owns its own CLI path, dependencies, and execution details.
 
 Where `<output-path>` is the final location the user asked for (e.g. `~/Documents/acme-robotics-policy.docx`), not necessarily in the working directory.
 
@@ -170,7 +164,7 @@ Then summarize for the user:
 
 ## Composition with other skills
 
-- **`insure-policy-format`** — called internally as the final step. Takes the pandoc output and canonicalizes it.
+- **`insure-policy-format`** — hand off after creating `<working-dir>/draft.docx`. Takes the pandoc output and canonicalizes it.
 - **`insure-policy-draft`** — the live-Word alternative. Prefer that one if the user wants interactive mid-draft control.
 - **`word-bridge`** — not used here. This flow doesn't touch a live Word session.
 - **Research skills / external tools (user-directed)** — at the pause points, the user drives whatever research they need.

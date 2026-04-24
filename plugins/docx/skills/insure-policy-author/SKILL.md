@@ -24,7 +24,7 @@ Author a new Corgi-Tech policy form from scratch — not by inserting canned boi
 
 - Read access to the customer's policy corpus (a directory of `.pdf` or `.docx` policy forms).
 - `pandoc` on PATH.
-- `uv` on PATH (for the formatter CLI).
+- `insure-policy-format` available in this plugin for the final canonicalization pass.
 - *Optional but strongly recommended*: the customer's SERFF search skill. SERFF (NAIC's form-filing system) gives access to comparable policies filed by other carriers. The customer has programmatic access via a separate skill; invoke it at pause points when a clause needs market grounding.
 - *Optional*: WebSearch / WebFetch for secondary research (regulatory references, trade press on emerging risks, etc.).
 
@@ -62,7 +62,7 @@ The rationale: bare labels are brittle. If someone later renumbers sections, eve
 Gather from the user:
 
 - **Target policy type** — plain-English name (e.g., "Cyber Liability", "Crime", "Representations & Warranties").
-- **Precedent corpus location** — directory containing the in-house policies to draw from. Default probe: `/Users/milanb/Workable/consistency/assets/policies/` (a fixture set for development); the customer's production path may differ.
+- **Precedent corpus location** — directory containing the in-house policies to draw from. Ask the user for this path if it is not already known in the current workspace; do not assume a developer-local fixture path.
 - **Scope hints** — what exposures the new product should cover. First-party, third-party, both? Claims-made or occurrence? New-entity coverage if acquired during the policy period? Any early constraints the user wants to bake in (e.g., "must include breach-response costs", "no regulatory defense coverage").
 - **Form code** — if the user has a code assignment convention (the corpus suggests `CORG-TECH-0100` for CGL, `CORG-TECH-0200` for Cyber, etc.), let the user pick a new code. If they don't have one, propose next-available.
 - **Output path** — where to save the final `.docx`.
@@ -144,11 +144,9 @@ After all sections are drafted and approved, assemble the composed markdown the 
 
 ```bash
 pandoc -f markdown-fancy_lists-startnum <working-dir>/draft.md -o <working-dir>/draft.docx
-uv run /Users/milanb/Workable/corgi/plugins/docx/skills/insure-policy-format/scripts/format.py \
-  <working-dir>/draft.docx -o <output-path>
 ```
 
-The `-f markdown-fancy_lists-startnum` flag is **critical** — without it pandoc promotes `a) ...`, `1) ...` to Word ordered lists and the formatter drops them. See `insure-policy-draft-md` for the full explanation of this gotcha.
+Then invoke the `insure-policy-format` skill to canonicalize `<working-dir>/draft.docx` into `<output-path>`. Do not run the formatter script directly from this skill; the formatter skill owns its own CLI path, dependencies, and execution details. The `-f markdown-fancy_lists-startnum` flag is **critical** — without it pandoc promotes `a) ...`, `1) ...` to Word ordered lists and the formatter drops them. See `insure-policy-draft-md` for the full explanation of this gotcha.
 
 Sanity-check the output:
 
@@ -181,7 +179,7 @@ Deliver to the user:
 ## Composition with other skills
 
 - **`insure-policy-draft-md`** — this skill's downstream successor once its output is adjudicated. The `.docx` this skill produces can be decomposed into `references/<type>/0N-section-N.md` files that `-draft-md` consumes on future invocations of the same product line.
-- **`insure-policy-format`** — called internally as the final rendering step. Same pipeline as `-draft-md`.
+- **`insure-policy-format`** — hand off after creating `<working-dir>/draft.docx`. Same canonicalization pass as `-draft-md`.
 - **`insure-policy-draft`** — not used. This skill is markdown-first, not live-Word-first.
 - **`word-bridge`** — not used.
 - **Customer's SERFF search skill** — invoked by the user at pause points when a clause needs market-filed-form grounding. This skill does not call SERFF directly.
