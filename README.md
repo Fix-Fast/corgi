@@ -61,6 +61,80 @@ Claude Code
 
 The desktop bridge is required because multiple Claude sessions and multiple open Word documents need to be multiplexed onto one local control plane; the MCP server is a thin stdio adapter, not a standalone bridge.
 
+## Insurance Policy Formatter
+
+This repo also contains an offline formatter for Corgi-Tech insurance
+policy `.docx` files.
+
+- spec: [format.md](/Volumes/workspace/src/corgi/format.md)
+- packaged human rules: [plugins/docx/skills/insure-policy-format/format.md](/Volumes/workspace/src/corgi/plugins/docx/skills/insure-policy-format/format.md)
+- skill: [plugins/docx/skills/insure-policy-format/SKILL.md](/Volumes/workspace/src/corgi/plugins/docx/skills/insure-policy-format/SKILL.md)
+- scripts: [plugins/docx/skills/insure-policy-format/scripts](/Volumes/workspace/src/corgi/plugins/docx/skills/insure-policy-format/scripts)
+
+Public scripts:
+
+- `rule_1.py` — converge text hierarchy: title, section headings,
+  subheadings, and body text
+- `rule_2.py` — converge list structure and list formatting
+- `rule_3.py` — converge page layout and running header
+
+Shared modules:
+
+- `formatter.py`
+- `_ooxml.py`
+- `format.py`
+
+### Quick Start
+
+Run the full formatter:
+
+```sh
+uv run plugins/docx/skills/insure-policy-format/scripts/format.py \
+  /abs/path/to/input.docx \
+  -o /abs/path/to/output.docx \
+  --parts-in /tmp/policy.parts.json
+```
+
+Run the same process rule by rule:
+
+```sh
+uv run plugins/docx/skills/insure-policy-format/scripts/rule_1.py \
+  /abs/path/to/input.docx \
+  -o /tmp/policy.docx \
+  --parts-in /tmp/policy.parts.json
+
+uv run plugins/docx/skills/insure-policy-format/scripts/rule_3.py \
+  /abs/path/to/input.docx \
+  /tmp/policy.docx \
+  --parts-in /tmp/policy.parts.json
+
+uv run plugins/docx/skills/insure-policy-format/scripts/rule_2.py \
+  /tmp/policy.docx
+```
+
+### Scope And Guarantees
+
+- The formatter is currently intended for Corgi-Tech insurance policy
+  documents, not arbitrary `.docx` files.
+- Claude Code is expected to inspect the source document first and pass
+  an explicit document-parts manifest into the formatter.
+- The rule pipeline reproduces the known fixture formatting for
+  `../formatter/assets/policy_documents/cgl_original.docx`.
+- Accepted match:
+  `word/document.xml`, `word/numbering.xml`, and `word/styles.xml`
+  must be identical to the reference output.
+- `docProps/core.xml` timestamps may differ between runs.
+
+### Reference Fixture
+
+Input:
+
+- [cgl_original.docx](</Volumes/workspace/src/formatter/assets/policy_documents/cgl_original.docx>)
+
+Expected formatted output:
+
+- [cgl_original.formatted.docx](</Volumes/workspace/src/formatter/assets/policy_documents/cgl_original.formatted.docx>)
+
 ## Troubleshooting
 
 - **"bridge unreachable"** — start Carson desktop and make sure a Word document with the add-in task pane is open.

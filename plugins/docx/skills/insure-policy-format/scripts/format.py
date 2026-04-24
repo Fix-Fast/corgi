@@ -13,14 +13,18 @@ Corgi-Tech policy DOCX into the canonical heading / list / layout
 conventions.
 
 Usage:
-    uv run format.py <input.docx> -o <output.docx> [--artifacts-dir DIR]
+    uv run format.py <input.docx> -o <output.docx> --parts-in <parts.json>
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from formatter import run
+from formatter import (
+    apply_page_layout_and_header,
+    build_text_hierarchy_docx,
+    normalize_list_formatting,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,16 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Formatted output DOCX. Defaults next to the source as *.formatted.docx.",
     )
     parser.add_argument(
-        "--artifacts-dir",
+        "--parts-in",
         type=Path,
-        default=None,
-        help="If set, write debug artifacts (blocks.json, ast.json, report.json) here.",
-    )
-    parser.add_argument(
-        "--blocks-in",
-        type=Path,
-        default=None,
-        help="Optional precomputed blocks.json to render from.",
+        required=True,
+        help="Document-parts manifest JSON produced by Claude or another caller.",
     )
     return parser
 
@@ -55,12 +53,18 @@ def main() -> int:
     output_docx = args.output or args.source_docx.with_name(
         f"{args.source_docx.stem}.formatted.docx"
     )
-    run(
+    output_docx.parent.mkdir(parents=True, exist_ok=True)
+    build_text_hierarchy_docx(
         args.source_docx,
         output_docx,
-        artifacts_dir=args.artifacts_dir,
-        blocks_in=args.blocks_in,
+        parts_in=args.parts_in,
     )
+    apply_page_layout_and_header(
+        args.source_docx,
+        output_docx,
+        parts_in=args.parts_in,
+    )
+    normalize_list_formatting(output_docx)
     return 0
 
 

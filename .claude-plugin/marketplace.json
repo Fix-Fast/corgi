@@ -9,7 +9,7 @@
       "name": "docx",
       "source": "./plugins/docx",
       "description": "Drive Microsoft Word live from Claude Code via the Carson local Word bridge. Layers on top of Claude Code's built-in docx skill.",
-      "version": "0.3.0"
+      "version": "0.4.0"
     }
   ]
 }
