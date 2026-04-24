@@ -1,0 +1,46 @@
+# 1 — Section I: Policy Terms and Conditions
+
+**Kind**: all boilerplate.
+**User input**: none.
+**Pause point**: none.
+**Structure note**: the sample renders every provision under one list-0 anchor (`1) Allocation:`), with `a)`–`j)` as level-1 siblings covering Allocation → Premium Adjustments. Preserve this shape — the `insure-policy-format` skill relies on it.
+
+---
+
+## Canonical text (insert verbatim)
+
+SECTION I: POLICY TERMS AND CONDITIONS
+
+The following Policy Terms and Conditions apply to this Commercial General Liability (“CGL”) Policy. If a term, condition, definition, exclusion, or limitation set forth elsewhere in this Policy conflicts with these Policy Terms and Conditions, the other terms of this Policy shall control. Any term defined in this Policy, including words shown in boldface, has the meaning given in the Definitions section of this Policy; otherwise, the definitions in these Policy Terms and Conditions apply.
+
+1) Allocation: If, in any Demand, an Insured incurs both covered Loss and uncovered loss (because some of the allegations or causes of action in the Demand are covered by this Policy and others are not, or because the Demand includes both Insured parties and others who are not insured under this Policy), we will allocate the Loss between covered and uncovered amounts as follows:
+
+    a) Defense Costs: The covered portion of Defense Costs incurred in defending a Demand will be considered covered Loss, and we will pay Defense Costs (excess of any applicable Retention) to defend the entire Demand, even if the Demand includes matters or parties not covered. We reserve the right to later reallocate Defense Costs in the event it is finally determined that certain Defense Costs were incurred exclusively in relation to non-covered matters. Notwithstanding the foregoing, we may, at our discretion, allocate Defense Costs between covered and uncovered matters and parties from the outset based on the relative legal and financial exposure of the covered and uncovered parties and matters, in accordance with paragraph (b) below. You agree to reimburse us for any Defense Costs advanced that are ultimately determined to relate to non-covered matters or non-covered parties.
+
+    b) Other Loss: Loss other than Defense Costs (including damages, settlements, judgments, and awards) shall be allocated between covered Loss and uncovered Loss based on the relative legal exposure and financial exposure of the parties to the covered and uncovered matters. This allocation will take into account the extent to which any covered conduct and any uncovered conduct or parties contributed to the Loss amount.
+
+    c) We and you shall use our best efforts to agree upon a fair and proper allocation of Loss. If we and you cannot agree on the allocation, we will, until a final allocation is agreed upon or determined, advance the portion of the Loss which we believe in good faith to be covered under this Policy (subject to applicable limits of liability).
+
+    d) Changes in Exposure – Acquisition or Creation of a Subsidiary: If, before or during the Policy Period, the Named Insured (i) acquires Control of an entity (by acquiring more than 50% of its voting securities or by acquiring substantially all of its assets), or (ii) creates or acquires a new Subsidiary, then such newly acquired or created entity shall automatically be covered under this Policy, but only for Occurrences taking place after the effective date of such acquisition or creation.
+
+However, if the assets or revenues of any acquired entity exceed 10% of the total consolidated assets or revenues of the Named Insured (as reflected in the Named Insured’s most recent audited financial statements as of the inception of this Policy), you must provide written notice of the acquisition to us as soon as practicable (but no later than 90 days after the effective date of the acquisition or creation). We reserve the right to impose additional or different terms, conditions, and/or to charge a reasonable additional premium as a condition of extending coverage to such large acquisition or newly formed entity beyond the initial 90-day period. Coverage for any such acquired entity or Subsidiary beyond 90 days from the transaction is contingent upon your agreement to any additional terms and payment of any required premium.
+
+    e) Loss of Subsidiary Status: If any entity ceases to be a Subsidiary before or during the Policy Period (for example, due to sale, dissolution, or other divestiture such that the Named Insured no longer maintains Control of that entity), then coverage under this Policy for such entity shall continue but only for Occurrences that occurred entirely during the time that entity was a Subsidiary. After the date the entity ceases to be a Subsidiary, no coverage shall apply under this Policy for any new Occurrences by that entity. Automatic coverage under this paragraph applies only if
+
+        i) the new entity is engaged in substantially the same business as the Named Insured
+
+        ii) no Insured has knowledge of any actual or potential Demand, Occurrence, or circumstance involving the new entity that could give rise to a Demand
+
+        iii) the new entity is not subject to any pending or prior litigation, regulatory action, or insolvency proceeding.
+
+We reserve the right to deny coverage to any newly acquired or created entity that does not meet these conditions.
+
+    f) Assignment: No change, modification, or assignment of interest under this Policy shall be valid unless made by a written endorsement issued by us and expressly made part of this Policy. This Policy (and any rights or interests hereunder) may not be assigned by any Insured without our prior written consent, which may be granted or withheld in our sole discretion. There are no express or implied third-party beneficiaries under this Policy. Any assignment made or attempted in violation of this section shall be deemed void.
+
+    g) References to Laws: Any statute, act, or code mentioned or referenced in this Policy (including in any endorsement) is deemed to include all amendments to such laws and all rules or regulations promulgated under such laws. If a statute, act, or code is mentioned in this Policy and is followed by the phrase “or any similar law,” it shall be construed to include any similar federal, state, local or foreign law, common law, or regulation that is comparable in intent or effect to the cited law.
+
+    h) Most Favorable Jurisdiction for Certain Damages: Certain types of damages, fines, or penalties may not be insurable under some laws. It is the intent of this Policy to afford coverage to the fullest extent permitted by law for punitive, exemplary, and multiplied damages, and for civil fines and penalties, to the extent such matters constitute Loss under the Policy. The insurability of such damages, fines or penalties shall be determined under the law selected pursuant to the Choice of Law and Forum provision of this Policy.Choice of Law and Forum: This Policy, including its construction, application, and validity, shall be governed by the internal laws of the state specified in the Declarations as the principal address of the Named Insured. Any disputes involving this Policy shall be resolved in accordance with the laws of that jurisdiction, without regard to its conflict-of-law principles. If no state is specified, or if the Named Insured’s address is outside the United States, then the law of the State of New York shall apply. Unless otherwise agreed by the parties, any litigation concerning this Policy shall be brought in a competent court in the chosen jurisdiction whose law applies.
+
+    i) Coverage Territory – Currency and Sanctions: All premiums, Limits of Liability, Retentions, Loss, or other amounts under this Policy are expressed and payable in the currency of the United States of America (U.S. dollars). If any judgment, settlement, or other element of Loss under this Policy is stated in a currency other than U.S. dollars, payment under this Policy shall be made in U.S. dollars at the rate of exchange published in The Wall Street Journal on the date the final judgment is entered, the settlement amount is agreed upon, or the other element of Loss becomes due. However, this Policy will not apply in any country or territory where such application would violate the laws of the United States, including any country or region that is subject to U.S. economic or trade sanctions or export control laws administered by the U.S. Treasury Department’s Office of Foreign Assets Control (OFAC) or other applicable U.S. government agencies.
+
+    j) Premium Adjustments for Changes in Exposure: The premium amount stated in the Declarations is the minimum premium for the Policy Period. If during the Policy Period there are changes in exposure or coverages that materially increase our risk (such as the acquisition or creation of a new Subsidiary, a merger, or an Initial Public Offering), we reserve the right to adjust the premium during the Policy Period or upon renewal. Any additional premium charge or return premium due as a result of such changes will be calculated in accordance with our rules and rates. The Named Insured agrees to pay any additional premium reasonably required for an increase in exposure or coverage.
