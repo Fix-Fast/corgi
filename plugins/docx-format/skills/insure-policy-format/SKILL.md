@@ -25,6 +25,8 @@ Packaged docs:
 - Any document that is not a Corgi-Tech insurance policy — the
   formatter still assumes insurance-policy structure and may mis-format
   other document families.
+- Live edits on an open Word document — use the `word-bridge` skill for
+  that.
 - Generic DOCX creation or editing — use Anthropic's `docx` skill.
 
 ## Requirements
@@ -115,10 +117,62 @@ tells the LLM to extend the string with neighbor text.
     "Insuring Agreement A – Non-Indemnifiable",
     "Insuring Agreement B – Indemnifiable"
   ],
+  "outline_normalizations": [
+    {
+      "section_text": "SECTION IV. LIMITATIONS",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"},
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"}
+      ]
+    }
+  ],
   "header_title_text": "Directors and Officers Liability Policy",
   "policy_code": "SEIC-DO-0100"
 }
 ```
+
+`outline_normalizations` is optional. Include an entry per section
+that uses non-canonical outline markers (e.g. uppercase letters at the
+top level). Each entry tells the formatter what the source's marker
+style looks like at each level so it can rewrite to canonical
+`1)`/`a)`/`i)`/`(1)`/`(a)`/`(i)` before Rules 1/2/3 process the doc.
+
+Schema:
+
+- `section_text`: a substring that resolves to a unique source section
+  heading, using the same string-match rules as `section_heading_texts`
+  (verbatim text from the source; extend across `\n` if needed). The
+  rewrite covers the range from that heading up to (but not including)
+  the next section heading.
+- `source_levels`: ordered list (top-down) describing the source's
+  marker style at each outline level. Each level entry is an object:
+  - `pattern`: a Python regex with **exactly one capture group** for
+    the enumeration token. Examples:
+    - `"([A-Z])\\."` for `A. ... B. ... C. ...`
+    - `"(\\d+)\\)"` for `1) ... 2) ...`
+    - `"([a-z])\\)"` for `a) ... b) ...`
+    - `"\\(([ivx]+)\\)"` for `(i) ... (ii) ...`
+  - `sequence`: one of `decimal`, `upper_alpha`, `lower_alpha`,
+    `upper_roman`, `lower_roman` — declares how the captured token
+    should be parsed for ordering. Mismatched sequences (e.g. pattern
+    `([A-Z])` with `sequence: decimal`) are rejected.
+
+The formatter automatically anchors the regex at paragraph start (with
+optional leading whitespace) for leading-marker scans, and prepends
+boundary `(?<![A-Za-z0-9).(])` for embedded scans. This means citation
+references like `Section IV.A.` and parentheticals like `sixty (60)
+days` are NOT falsely matched.
+
+The Rule 0 rewrite walks paragraphs in the section, tracks per-level
+counters with parent-aware resets (any higher-level marker resets the
+counters below it), and substitutes each matched marker with the
+canonical marker for that level: level 0 → `1)` `2)` ..., level 1 →
+`a)` `b)` ..., level 2 → `i)` `ii)` ..., level 3 → `(1)` `(2)` ...,
+level 4 → `(a)` `(b)` ..., level 5 → `(i)` `(ii)` .... Both the
+leading marker of a paragraph and any embedded markers inside it are
+rewritten — so an inline `1) X ... or 2) Y` inside an A-level item
+becomes inline `a) X ... or b) Y` in the canonical form.
 
 In the example above:
 
@@ -133,8 +187,11 @@ In the example above:
 - `"DIRECTORS AND OFFICERS LIABILITY\nSPORTS"` similarly anchors the
   body-repeat.
 
-## Composing with other skills
+## Composing with the other plugin skills
 
+- To pick up the freshly formatted DOCX inside an open Word session:
+  run the CLI, then use the `word-bridge` skill to open or refresh the
+  document.
 - For offline DOCX work not covered by this skill (generic edits,
   content extraction), use Anthropic's `docx` skill from the
   `document-skills` plugin.

@@ -91,12 +91,36 @@ class HeaderMetadata:
     code: Optional[str] = None
 
 
+SEQUENCE_TYPES = (
+    "decimal",
+    "upper_alpha",
+    "lower_alpha",
+    "upper_roman",
+    "lower_roman",
+)
+
+
+@dataclass
+class LevelSpec:
+    pattern: str
+    sequence: str
+    compiled_leading: "re.Pattern" = field(default=None, repr=False)  # type: ignore
+    compiled_embedded: "re.Pattern" = field(default=None, repr=False)  # type: ignore
+
+
+@dataclass
+class OutlineNormalization:
+    section_text: str
+    source_levels: List[LevelSpec] = field(default_factory=list)
+
+
 @dataclass
 class DocumentParts:
     ignored_body_texts: List[str] = field(default_factory=list)
     title_texts: List[str] = field(default_factory=list)
     section_heading_texts: List[str] = field(default_factory=list)
     subheading_texts: List[str] = field(default_factory=list)
+    outline_normalizations: List[OutlineNormalization] = field(default_factory=list)
     header_title_text: Optional[str] = None
     policy_code: Optional[str] = None
 
@@ -318,13 +342,78 @@ def flatten_paras(blocks: List[dict], depth: int = 0) -> List[SourcePara]:
     return out
 
 
+def _parse_level_spec(raw: object, field_name: str) -> LevelSpec:
+    if not isinstance(raw, dict):
+        raise TypeError(
+            f"{field_name}: each level entry must be an object with 'pattern' and "
+            f"'sequence' keys, got {type(raw).__name__}"
+        )
+    pattern = raw.get("pattern")
+    sequence = raw.get("sequence")
+    if not isinstance(pattern, str) or not pattern:
+        raise ValueError(f"{field_name}: missing or non-string 'pattern' in {raw!r}")
+    if sequence not in SEQUENCE_TYPES:
+        raise ValueError(
+            f"{field_name}: 'sequence' must be one of {list(SEQUENCE_TYPES)}, "
+            f"got {sequence!r}"
+        )
+    unexpected = set(raw) - {"pattern", "sequence"}
+    if unexpected:
+        raise ValueError(f"{field_name}: unknown keys: {sorted(unexpected)}")
+    try:
+        compiled_leading = re.compile(r"^\s*" + pattern)
+        compiled_embedded = re.compile(r"(?<![A-Za-z0-9).(])" + pattern)
+    except re.error as e:
+        raise ValueError(f"{field_name}: invalid regex {pattern!r}: {e}")
+    if compiled_leading.groups != 1:
+        raise ValueError(
+            f"{field_name}: pattern {pattern!r} must have exactly one capture "
+            f"group (the enumeration token); got {compiled_leading.groups}"
+        )
+    return LevelSpec(
+        pattern=pattern,
+        sequence=sequence,
+        compiled_leading=compiled_leading,
+        compiled_embedded=compiled_embedded,
+    )
+
+
+def _parse_outline_normalization(raw: object, idx: int) -> OutlineNormalization:
+    field_name = f"outline_normalizations[{idx}]"
+    if not isinstance(raw, dict):
+        raise TypeError(f"{field_name}: must be an object, got {type(raw).__name__}")
+    section_text = raw.get("section_text")
+    source_levels = raw.get("source_levels")
+    if not isinstance(section_text, str) or not section_text.strip():
+        raise ValueError(f"{field_name}: missing or empty 'section_text'")
+    if not isinstance(source_levels, list) or not source_levels:
+        raise ValueError(f"{field_name}: 'source_levels' must be a non-empty list")
+    unexpected = set(raw) - {"section_text", "source_levels"}
+    if unexpected:
+        raise ValueError(f"{field_name}: unknown keys: {sorted(unexpected)}")
+    levels = [
+        _parse_level_spec(level, f"{field_name}.source_levels[{i}]")
+        for i, level in enumerate(source_levels)
+    ]
+    return OutlineNormalization(section_text=section_text, source_levels=levels)
+
+
 def load_document_parts(path: Path) -> DocumentParts:
     raw = json.loads(path.read_text())
+    outline_raw = raw.get("outline_normalizations", [])
+    if not isinstance(outline_raw, list):
+        raise TypeError(
+            f"outline_normalizations: must be a list, got {type(outline_raw).__name__}"
+        )
+    outline_normalizations = [
+        _parse_outline_normalization(entry, i) for i, entry in enumerate(outline_raw)
+    ]
     return DocumentParts(
         ignored_body_texts=raw.get("ignored_body_texts", []),
         title_texts=raw.get("title_texts", []),
         section_heading_texts=raw.get("section_heading_texts", []),
         subheading_texts=raw.get("subheading_texts", []),
+        outline_normalizations=outline_normalizations,
         header_title_text=raw.get("header_title_text"),
         policy_code=raw.get("policy_code"),
     )
@@ -442,6 +531,208 @@ def resolve_part_strings(parts: DocumentParts, source_paras: List[SourcePara]) -
     ]
 
 
+_CANONICAL_LEVEL_FORMS = (
+    ("decimal", "{}", ")"),
+    ("lower_alpha", "{}", ")"),
+    ("lower_roman", "{}", ")"),
+    ("decimal", "({})", ""),
+    ("lower_alpha", "({})", ""),
+    ("lower_roman", "({})", ""),
+)
+
+
+def _index_to_alpha(n: int, upper: bool = False) -> str:
+    if n < 1:
+        raise ValueError(f"alpha index must be >= 1, got {n}")
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(ord("a") + rem) + out
+    return out.upper() if upper else out
+
+
+_ROMAN_PAIRS = (
+    (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+    (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+    (10, "x"), (9, "ix"), (5, "v"), (4, "iv"),
+    (1, "i"),
+)
+
+
+def _index_to_roman(n: int, upper: bool = False) -> str:
+    if n < 1:
+        raise ValueError(f"roman index must be >= 1, got {n}")
+    out = ""
+    for value, numeral in _ROMAN_PAIRS:
+        while n >= value:
+            out += numeral
+            n -= value
+    return out.upper() if upper else out
+
+
+def _format_sequence_token(sequence: str, n: int) -> str:
+    if sequence == "decimal":
+        return str(n)
+    if sequence == "lower_alpha":
+        return _index_to_alpha(n, upper=False)
+    if sequence == "upper_alpha":
+        return _index_to_alpha(n, upper=True)
+    if sequence == "lower_roman":
+        return _index_to_roman(n, upper=False)
+    if sequence == "upper_roman":
+        return _index_to_roman(n, upper=True)
+    raise ValueError(f"unknown sequence type: {sequence!r}")
+
+
+def canonical_marker_for_level(level_idx: int, counter: int) -> str:
+    if level_idx < 0 or level_idx >= len(_CANONICAL_LEVEL_FORMS):
+        raise ValueError(
+            f"canonical marker only defined for levels 0..{len(_CANONICAL_LEVEL_FORMS) - 1}, "
+            f"got level {level_idx}"
+        )
+    sequence, template, suffix = _CANONICAL_LEVEL_FORMS[level_idx]
+    token = _format_sequence_token(sequence, counter)
+    return template.format(token) + suffix
+
+
+def _split_inlines_preserve(
+    inlines: List[dict], offset: int
+) -> Tuple[List[dict], List[dict]]:
+    """Like split_inlines_at but does not strip leading whitespace from the
+    right side. Used by Rule 0 marker rewriting which must preserve every
+    character verbatim around the replacement."""
+    if offset <= 0:
+        return [], list(inlines)
+    left: List[dict] = []
+    right: List[dict] = []
+    remaining = offset
+    for item in inlines:
+        if remaining <= 0:
+            right.append(item)
+            continue
+        kind = item["t"]
+        if kind == "Str":
+            text = item["c"]
+            if len(text) <= remaining:
+                left.append(item)
+                remaining -= len(text)
+            else:
+                left.append({"t": "Str", "c": text[:remaining]})
+                right.append({"t": "Str", "c": text[remaining:]})
+                remaining = 0
+        elif kind in ("Space", "SoftBreak", "LineBreak"):
+            if remaining >= 1:
+                left.append(item)
+                remaining -= 1
+            else:
+                right.append(item)
+        else:
+            inner_text = inlines_to_text([item])
+            if len(inner_text) <= remaining:
+                left.append(item)
+                remaining -= len(inner_text)
+            else:
+                right.append(item)
+                remaining = 0
+    return left, right
+
+
+def _replace_text_span_in_inlines(
+    inlines: List[dict], offset: int, length: int, replacement: str
+) -> List[dict]:
+    if length <= 0:
+        return inlines
+    left, rest = _split_inlines_preserve(inlines, offset)
+    _, right = _split_inlines_preserve(rest, length)
+    out = list(left)
+    if replacement:
+        out.append({"t": "Str", "c": replacement})
+    out.extend(right)
+    return out
+
+
+def _scan_marker_matches(
+    text: str, source_levels: List[LevelSpec]
+) -> List[Tuple[int, int, int]]:
+    """Return list of (start, end, level_idx) for non-overlapping marker matches in text."""
+    raw_matches: List[Tuple[int, int, int]] = []
+    for level_idx, level in enumerate(source_levels):
+        for m in level.compiled_embedded.finditer(text):
+            raw_matches.append((m.start(), m.end(), level_idx))
+    leading_match: Optional[Tuple[int, int, int]] = None
+    for level_idx, level in enumerate(source_levels):
+        m = level.compiled_leading.match(text)
+        if m and (leading_match is None or level_idx < leading_match[2]):
+            leading_match = (m.start(), m.end(), level_idx)
+    if leading_match is not None:
+        raw_matches = [
+            (s, e, lv) for (s, e, lv) in raw_matches if s >= leading_match[1]
+        ]
+        raw_matches.append(leading_match)
+    raw_matches.sort(key=lambda x: (x[0], x[2]))
+    chosen: List[Tuple[int, int, int]] = []
+    last_end = -1
+    for start, end, lv in raw_matches:
+        if start < last_end:
+            continue
+        chosen.append((start, end, lv))
+        last_end = end
+    return chosen
+
+
+def _rewrite_paragraph_outline(
+    para: SourcePara, source_levels: List[LevelSpec], counters: List[int]
+) -> None:
+    text = inlines_to_text(para.inlines)
+    matches = _scan_marker_matches(text, source_levels)
+    if not matches:
+        return
+    inlines = para.inlines
+    delta = 0
+    for start, end, level_idx in matches:
+        counters[level_idx] += 1
+        for j in range(level_idx + 1, len(counters)):
+            counters[j] = 0
+        canonical = canonical_marker_for_level(level_idx, counters[level_idx]) + " "
+        adj_start = start + delta
+        adj_end = end + delta
+        original_len = adj_end - adj_start
+        is_leading = start == 0 or text[:start].strip() == ""
+        if not is_leading:
+            canonical_text = " " + canonical.rstrip() + " "
+        else:
+            canonical_text = canonical
+        inlines = _replace_text_span_in_inlines(
+            inlines, adj_start, original_len, canonical_text
+        )
+        delta += len(canonical_text) - original_len
+    para.inlines[:] = inlines
+    para.text = normalize_text(inlines_to_text(para.inlines))
+
+
+def normalize_outlines(parts: DocumentParts, source_paras: List[SourcePara]) -> None:
+    if not parts.outline_normalizations:
+        return
+    section_indexes = sorted(
+        idx for idx in parts.section_heading_texts if isinstance(idx, int)
+    )
+    corpus, spans = _build_corpus(source_paras)
+    for n_idx, norm in enumerate(parts.outline_normalizations):
+        target_idx = _resolve_part_entry(
+            norm.section_text,
+            f"outline_normalizations[{n_idx}].section_text",
+            source_paras,
+            corpus,
+            spans,
+        )
+        next_idx = next(
+            (i for i in section_indexes if i > target_idx), len(source_paras)
+        )
+        counters = [0] * len(norm.source_levels)
+        for para in source_paras[target_idx + 1 : next_idx]:
+            _rewrite_paragraph_outline(para, norm.source_levels, counters)
+
+
 def resolve_document_parts(
     parts_in: Optional[Path] = None,
 ) -> DocumentParts:
@@ -453,6 +744,29 @@ def resolve_document_parts(
             "subheadings, running-header text, and policy code, then rerun with --parts-in /path/to/parts.json."
         )
     return load_document_parts(parts_in)
+
+
+def normalize_outlines_to_docx(
+    source_docx: Path,
+    output_docx: Path,
+    *,
+    parts_in: Optional[Path] = None,
+) -> None:
+    """Standalone Rule 0: rewrite non-canonical outline markers in the source
+    document and write the result back as a new DOCX via pandoc round-trip.
+    Intended for use as a pre-pass before rule_1.py."""
+    parts = resolve_document_parts(parts_in=parts_in)
+    ast = load_source_ast(source_docx)
+    source_paras = flatten_paras(ast["blocks"])
+    resolve_part_strings(parts, source_paras)
+    normalize_outlines(parts, source_paras)
+    json_payload = json.dumps(ast)
+    subprocess.run(
+        [pandoc_executable(), "-f", "json", "-t", "docx", "-o", str(output_docx)],
+        input=json_payload,
+        text=True,
+        check=True,
+    )
 
 
 _PAREN_DECIMAL_SCAN = re.compile(r"(?<![A-Za-z0-9)])\((\d+)\)(?:\s+|(?=[A-Z(])|$)")
@@ -801,6 +1115,7 @@ def build_text_hierarchy_docx(
     parts = resolve_document_parts(parts_in=parts_in)
     source_paras = load_source_paras(source_docx)
     resolve_part_strings(parts, source_paras)
+    normalize_outlines(parts, source_paras)
     valid_paren_decimals = collect_valid_paren_decimals(source_paras)
     blocks = classify(
         split_on_embedded_markers(source_paras, valid_paren_decimals),

@@ -18,6 +18,43 @@ Coverage and insuring-agreement headings do not need to appear in a
 fixed sequence. For example, a document may contain only `Coverage B`
 without also containing `Coverage A` or `Coverage C`.
 
+## Rule 0: Outline normalization (pre-pass)
+
+Some source documents use non-canonical outline markers — for example,
+uppercase letters at the top level of a section:
+
+```
+A. Foo
+  1) bar
+  2) baz
+B. Qux
+```
+
+Rule 0 rewrites such outlines to the canonical sequence
+(`1)` -> `a)` -> `i)` -> `(1)` -> `(a)` -> `(i)`). The example above
+becomes:
+
+```
+1) Foo
+  a) bar
+  b) baz
+2) Qux
+```
+
+The rewrite is content-level, not styling. After Rule 0 finishes, the
+document looks as if it had been authored in canonical form, so
+Rules 1/2/3 see only canonical markers and stay commutative with each
+other.
+
+Rule 0 only fires for sections that are explicitly flagged as needing
+normalization. The flagging mechanism, target-section identification,
+and source-marker description live in the skill's manifest (see
+`SKILL.md`), not here.
+
+Script:
+
+- `rule_0.py`
+
 ## Rule 1: Text hierarchy
 
 The document should have a clear text hierarchy:
@@ -187,6 +224,7 @@ Script:
 
 The full formatter is the composition of:
 
-1. `rule_1.py`
-2. `rule_3.py`
-3. `rule_2.py`
+1. `rule_0.py` (only fires for sections listed in `outline_normalizations`)
+2. `rule_1.py`
+3. `rule_3.py`
+4. `rule_2.py`
