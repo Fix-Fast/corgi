@@ -21,18 +21,18 @@ from _ooxml import patch_list_levels, set_list_suffix, strip_list_ind_overrides
 
 
 LEVEL_PATTERNS = [
-    re.compile(r"^\s*(\d+)\)(\s+|(?=[A-Z(]))"),
-    re.compile(r"^\s*([a-z])\)(\s+|(?=[A-Z(]))"),
-    re.compile(r"^\s*([ivx]+)\)(\s+|(?=[A-Z(]))"),
+    re.compile(r"^\s*(\d+)[).](\s+|(?=[A-Z(]))"),
+    re.compile(r"^\s*([a-z])[).](\s+|(?=[A-Z(]))"),
+    re.compile(r"^\s*([ivx]+)[).](\s+|(?=[A-Z(]))"),
     re.compile(r"^\s*\((\d+)\)(\s+|(?=[A-Z(]))"),
     re.compile(r"^\s*\(([a-z])\)(\s+|(?=[A-Z(]))"),
     re.compile(r"^\s*\(([ivx]+)\)(\s+|(?=[A-Z(]))"),
 ]
 
 EMBEDDED_MARKER_PATTERNS = [
-    re.compile(r"(\(\d+\)(\s+|(?=[A-Z(])))"),
-    re.compile(r"(\([a-z]\)(\s+|(?=[A-Z(])))"),
-    re.compile(r"(\([ivx]+\)(\s+|(?=[A-Z(])))"),
+    re.compile(r"(?<![A-Za-z0-9)])(\(\d+\)(\s+|(?=[A-Z(])))"),
+    re.compile(r"(?<![A-Za-z0-9)])(\([a-z]\)(\s+|(?=[A-Z(])))"),
+    re.compile(r"(?<![A-Za-z0-9)])(\([ivx]+\)(\s+|(?=[A-Z(])))"),
     re.compile(r"(?<=\s)(\d+\)(\s+|(?=[A-Z(])))"),
     re.compile(r"(?<=\s)([a-z]\)(\s+|(?=[A-Z(])))"),
     re.compile(r"(?<=\s)([ivx]+\)(\s+|(?=[A-Z(])))"),
@@ -93,10 +93,10 @@ class HeaderMetadata:
 
 @dataclass
 class DocumentParts:
-    ignored_body_indexes: List[int] = field(default_factory=list)
-    title_indexes: List[int] = field(default_factory=list)
-    section_heading_indexes: List[int] = field(default_factory=list)
-    subheading_indexes: List[int] = field(default_factory=list)
+    ignored_body_texts: List[str] = field(default_factory=list)
+    title_texts: List[str] = field(default_factory=list)
+    section_heading_texts: List[str] = field(default_factory=list)
+    subheading_texts: List[str] = field(default_factory=list)
     header_title_text: Optional[str] = None
     policy_code: Optional[str] = None
 
@@ -321,10 +321,10 @@ def flatten_paras(blocks: List[dict], depth: int = 0) -> List[SourcePara]:
 def load_document_parts(path: Path) -> DocumentParts:
     raw = json.loads(path.read_text())
     return DocumentParts(
-        ignored_body_indexes=raw.get("ignored_body_indexes", []),
-        title_indexes=raw.get("title_indexes", []),
-        section_heading_indexes=raw.get("section_heading_indexes", []),
-        subheading_indexes=raw.get("subheading_indexes", []),
+        ignored_body_texts=raw.get("ignored_body_texts", []),
+        title_texts=raw.get("title_texts", []),
+        section_heading_texts=raw.get("section_heading_texts", []),
+        subheading_texts=raw.get("subheading_texts", []),
         header_title_text=raw.get("header_title_text"),
         policy_code=raw.get("policy_code"),
     )
@@ -337,6 +337,109 @@ def load_source_ast(source_docx: Path) -> dict:
 
 def load_source_paras(source_docx: Path) -> List[SourcePara]:
     return flatten_paras(load_source_ast(source_docx)["blocks"])
+
+
+def _normalize_match_string(s: str) -> str:
+    chunks = s.split("\n")
+    normalized = [normalize_text(chunk) for chunk in chunks]
+    return "\n".join(normalized)
+
+
+def _build_corpus(source_paras: List[SourcePara]) -> Tuple[str, List[Tuple[int, int, int]]]:
+    parts: List[str] = []
+    spans: List[Tuple[int, int, int]] = []
+    cursor = 0
+    for p in source_paras:
+        text = p.text
+        start = cursor
+        end = cursor + len(text)
+        spans.append((p.index, start, end))
+        parts.append(text)
+        cursor = end + 1
+    return "\n".join(parts), spans
+
+
+def _find_all(haystack: str, needle: str) -> List[int]:
+    out: List[int] = []
+    start = 0
+    while True:
+        i = haystack.find(needle, start)
+        if i < 0:
+            return out
+        out.append(i)
+        start = i + 1
+
+
+def _paragraph_for_position(
+    pos: int, spans: List[Tuple[int, int, int]]
+) -> int:
+    for idx, start, end in spans:
+        if start <= pos < end:
+            return idx
+        if pos < start:
+            return idx
+    return spans[-1][0]
+
+
+def _resolve_part_entry(
+    entry: object,
+    field_name: str,
+    source_paras: List[SourcePara],
+    corpus: str,
+    spans: List[Tuple[int, int, int]],
+) -> int:
+    if not isinstance(entry, str):
+        raise TypeError(
+            f"{field_name}: entries must be strings (verbatim text drawn from the "
+            f"target paragraph, optionally extended with neighbor paragraph text "
+            f"separated by newlines), got {type(entry).__name__}"
+        )
+    needle = _normalize_match_string(entry)
+    if not needle.strip():
+        raise ValueError(f"{field_name}: empty match string is not allowed")
+
+    positions = _find_all(corpus, needle)
+    if not positions:
+        raise ValueError(
+            f"{field_name}: no match for {entry!r}. Provide a substring drawn "
+            f"verbatim from the target paragraph (whitespace is collapsed). To "
+            f"disambiguate identical paragraphs, extend the string across "
+            f"paragraph boundaries with '\\n' and include some neighbor text."
+        )
+    if len(positions) > 1:
+        targets = [_paragraph_for_position(p, spans) for p in positions]
+        previews = "; ".join(
+            f"#{idx}: {source_paras[idx].text[:80]}"
+            f"{'...' if len(source_paras[idx].text) > 80 else ''}"
+            for idx in targets
+        )
+        raise ValueError(
+            f"{field_name}: match string {entry!r} matches {len(positions)} "
+            f"positions in the corpus and is ambiguous. Extend the string with "
+            f"neighbor paragraph text (using '\\n') to make it unique. "
+            f"Candidate paragraphs: {previews}"
+        )
+    return _paragraph_for_position(positions[0], spans)
+
+
+def resolve_part_strings(parts: DocumentParts, source_paras: List[SourcePara]) -> None:
+    corpus, spans = _build_corpus(source_paras)
+    parts.ignored_body_texts = [
+        _resolve_part_entry(x, "ignored_body_texts", source_paras, corpus, spans)
+        for x in parts.ignored_body_texts
+    ]
+    parts.title_texts = [
+        _resolve_part_entry(x, "title_texts", source_paras, corpus, spans)
+        for x in parts.title_texts
+    ]
+    parts.section_heading_texts = [
+        _resolve_part_entry(x, "section_heading_texts", source_paras, corpus, spans)
+        for x in parts.section_heading_texts
+    ]
+    parts.subheading_texts = [
+        _resolve_part_entry(x, "subheading_texts", source_paras, corpus, spans)
+        for x in parts.subheading_texts
+    ]
 
 
 def resolve_document_parts(
@@ -352,16 +455,37 @@ def resolve_document_parts(
     return load_document_parts(parts_in)
 
 
+_PAREN_DECIMAL_SCAN = re.compile(r"(?<![A-Za-z0-9)])\((\d+)\)(?:\s+|(?=[A-Z(])|$)")
+
+
+def collect_valid_paren_decimals(source_paras: List[SourcePara]) -> set:
+    universe: set = set()
+    for p in source_paras:
+        for m in _PAREN_DECIMAL_SCAN.finditer(p.text):
+            try:
+                universe.add(int(m.group(1)))
+            except ValueError:
+                pass
+    return {n for n in universe if (n - 1) in universe or (n + 1) in universe}
+
+
 def parse_leading_marker(
     inlines: List[dict],
     prev_l1: Optional[str],
     prev_l4: Optional[str],
+    valid_paren_decimals: Optional[set] = None,
 ) -> Tuple[Optional[int], Optional[str], List[dict], bool]:
     text = inlines_to_text(inlines)
     matches = []
     for level, regex in enumerate(LEVEL_PATTERNS):
         match = regex.match(text)
         if match:
+            if level == 3 and valid_paren_decimals is not None:
+                try:
+                    if int(match.group(1)) not in valid_paren_decimals:
+                        continue
+                except ValueError:
+                    continue
             matches.append((level, match.end(), match.group(1)))
     if not matches:
         return None, None, inlines, False
@@ -404,13 +528,21 @@ def parse_leading_marker(
     return level, token, strip_chars_from_inlines(inlines, end), ambiguous
 
 
-def find_embedded_marker_offset(inlines: List[dict]) -> Optional[int]:
+def find_embedded_marker_offset(
+    inlines: List[dict],
+    valid_paren_decimals: Optional[set] = None,
+) -> Optional[int]:
     text = inlines_to_text(inlines)
     best: Optional[int] = None
     for regex in EMBEDDED_MARKER_PATTERNS:
         for match in regex.finditer(text):
             if match.start() <= 0:
                 continue
+            token = match.group(1) if match.lastindex else match.group(0)
+            if valid_paren_decimals is not None:
+                paren_digit = re.match(r"\((\d+)\)", token)
+                if paren_digit and int(paren_digit.group(1)) not in valid_paren_decimals:
+                    continue
             if best is None or match.start() < best:
                 best = match.start()
     return best
@@ -427,13 +559,16 @@ def cleanup_left_split_fragment(inlines: List[dict]) -> List[dict]:
     return trim_trailing_chars_from_inlines(inlines, trim)
 
 
-def split_on_embedded_markers(source_paras: List[SourcePara]) -> List[SourcePara]:
+def split_on_embedded_markers(
+    source_paras: List[SourcePara],
+    valid_paren_decimals: Optional[set] = None,
+) -> List[SourcePara]:
     out: List[SourcePara] = []
     for para in source_paras:
         pending = [para.inlines]
         while pending:
             current_inlines = pending.pop(0)
-            offset = find_embedded_marker_offset(current_inlines)
+            offset = find_embedded_marker_offset(current_inlines, valid_paren_decimals)
             if offset is None:
                 out.append(
                     SourcePara(
@@ -474,12 +609,16 @@ def merge_or_continue(prev_block: Block, para: SourcePara) -> None:
     prev_block.continuations.append(para.inlines)
 
 
-def classify(source_paras: List[SourcePara], parts: DocumentParts) -> List[Block]:
+def classify(
+    source_paras: List[SourcePara],
+    parts: DocumentParts,
+    valid_paren_decimals: Optional[set] = None,
+) -> List[Block]:
     blocks: List[Block] = []
-    ignored_indexes = set(parts.ignored_body_indexes)
-    title_indexes = set(parts.title_indexes)
-    section_indexes = set(parts.section_heading_indexes)
-    subheading_indexes = set(parts.subheading_indexes)
+    ignored_indexes = set(parts.ignored_body_texts)
+    title_indexes = set(parts.title_texts)
+    section_indexes = set(parts.section_heading_texts)
+    subheading_indexes = set(parts.subheading_texts)
     prev_l1: Optional[str] = None
     prev_l4: Optional[str] = None
     last_list: Optional[Block] = None
@@ -522,7 +661,9 @@ def classify(source_paras: List[SourcePara], parts: DocumentParts) -> List[Block
             prev_l4 = None
             continue
 
-        level, token, stripped, ambiguous = parse_leading_marker(para.inlines, prev_l1, prev_l4)
+        level, token, stripped, ambiguous = parse_leading_marker(
+            para.inlines, prev_l1, prev_l4, valid_paren_decimals
+        )
         if level is not None:
             blocks.append(
                 Block(
@@ -659,7 +800,13 @@ def build_text_hierarchy_docx(
 ) -> List[Block]:
     parts = resolve_document_parts(parts_in=parts_in)
     source_paras = load_source_paras(source_docx)
-    blocks = classify(split_on_embedded_markers(source_paras), parts)
+    resolve_part_strings(parts, source_paras)
+    valid_paren_decimals = collect_valid_paren_decimals(source_paras)
+    blocks = classify(
+        split_on_embedded_markers(source_paras, valid_paren_decimals),
+        parts,
+        valid_paren_decimals,
+    )
     render_blocks_to_docx(blocks, output_docx, ast_out=ast_out)
     apply_heading_styles_to_docx(output_docx)
     apply_body_styles_to_docx(output_docx)

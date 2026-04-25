@@ -74,18 +74,66 @@ If the document already has explicit heading structure, use that.
 Do not assume coverage headings appear consecutively. For example, a
 document may contain only `Coverage B`.
 
-`parts.json` should look like:
+Each `*_texts` entry is a string drawn verbatim from the source. The
+match rules:
+
+1. The string is searched against the source corpus (all paragraphs
+   joined by `\n`). It must match at exactly one position.
+2. The target paragraph is the one **containing the start of the
+   match**.
+
+For unambiguous cases, just write a substring of the target paragraph
+(short is fine — like `"NOTICES:"`). For paragraphs whose text alone is
+ambiguous (e.g. duplicated lines), extend the string across paragraph
+boundaries with `\n` and include enough text from a following neighbor
+to make the match position unique. Use the next-paragraph context so
+the match still STARTS in the target.
+
+The formatter rejects no-match and multi-match cases with a message
+that names the offending field, shows the candidate paragraphs, and
+tells the LLM to extend the string with neighbor text.
+
+`parts.json` may look like:
 
 ```json
 {
-  "ignored_body_indexes": [0, 1],
-  "title_indexes": [2],
-  "section_heading_indexes": [8, 41],
-  "subheading_indexes": [5, 12, 19],
-  "header_title_text": "Commercial General Liability Policy",
-  "policy_code": "CORGI-TECH-1234"
+  "ignored_body_texts": [
+    "SEIC-DO-0100",
+    "DIRECTORS AND OFFICERS LIABILITY\nSPORTS",
+    "SPORTS AND ENTERTAINMENT ORGANIZATION\nSECTION I."
+  ],
+  "title_texts": [
+    "DIRECTORS AND OFFICERS LIABILITY\nINSURANCE",
+    "INSURANCE POLICY",
+    "SPORTS AND ENTERTAINMENT ORGANIZATION\nMANAGEMENT",
+    "MANAGEMENT LIABILITY COVERAGE"
+  ],
+  "section_heading_texts": [
+    "SECTION I. INSURING AGREEMENTS",
+    "SECTION II. DEFINITIONS"
+  ],
+  "subheading_texts": [
+    "NOTICES:",
+    "Insuring Agreement A – Non-Indemnifiable",
+    "Insuring Agreement B – Indemnifiable"
+  ],
+  "header_title_text": "Directors and Officers Liability Policy",
+  "policy_code": "SEIC-DO-0100"
 }
 ```
+
+In the example above:
+
+- `"NOTICES:"` is a unique substring → matches one position; target is
+  the paragraph containing it.
+- `"DIRECTORS AND OFFICERS LIABILITY\nINSURANCE"` distinguishes the
+  title's first line from its body-repeat: the title is followed by
+  `INSURANCE POLICY`, the body-repeat is followed by
+  `SPORTS AND ENTERTAINMENT ORGANIZATION`. So `"...\nINSURANCE"` matches
+  only the title position, and the target is the paragraph at the start
+  of that match.
+- `"DIRECTORS AND OFFICERS LIABILITY\nSPORTS"` similarly anchors the
+  body-repeat.
 
 ## Composing with the other plugin skills
 

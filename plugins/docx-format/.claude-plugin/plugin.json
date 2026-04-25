@@ -1,6 +1,6 @@
 {
   "name": "docx-format",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic Corgi-Tech insurance policy DOCX formatter. Standalone variant of the docx plugin with no MCP/Word-bridge dependency — just the bundled Python CLI.",
   "homepage": "https://github.com/Fix-Fast/corgi",
   "authors": [

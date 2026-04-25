@@ -84,18 +84,34 @@ List content should appear as a native multilevel list.
 
 Marker sequence:
 
-- `1)`
-- `a)`
-- `i)`
+- `1)` or `1.`
+- `a)` or `a.`
+- `i)` or `i.`
 - `(1)`
 - `(a)`
 - `(i)`
+
+A marker at the top three levels may end in either a closing
+parenthesis `)` or a period `.`. Both forms mean the same thing. The
+parenthesized forms (`(1)`, `(a)`, `(i)`) are matched only with
+parentheses on both sides.
+
+For example, all of these are recognized as the same kind of list item:
+
+- `1) Allocation: ...`
+- `1. Allocation: ...`
+- `a) Defense Costs: ...`
+- `a. Defense Costs: ...`
 
 If list content is still written as typed markers in plain text, it
 should be converted into a native list.
 
 If a paragraph contains multiple embedded list markers, it should be
-split into separate list paragraphs.
+split into separate list paragraphs. A piece of text only counts as a
+list marker if it stands on its own — at the start of a paragraph, or
+after a space and not stuck to a word or number. So `officer(s)`,
+`§4958(c)`, and `Section 4958(a)(2)` are left alone, because the `(s)`,
+`(c)`, and `(a)` are part of words or citations, not list markers.
 
 If a paragraph continues a list item, it should stay attached to that
 list item.
