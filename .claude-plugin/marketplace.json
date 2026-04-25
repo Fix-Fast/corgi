@@ -10,6 +10,12 @@
       "source": "./plugins/docx",
       "description": "Drive Microsoft Word live from Claude Code via the Carson local Word bridge. Layers on top of Claude Code's built-in docx skill.",
       "version": "0.4.0"
+    },
+    {
+      "name": "docx-format",
+      "source": "./plugins/docx-format",
+      "description": "Deterministic Corgi-Tech insurance policy DOCX formatter. Standalone variant of the docx plugin with no MCP/Word-bridge dependency.",
+      "version": "0.1.0"
     }
   ]
 }
