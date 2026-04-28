@@ -42,12 +42,14 @@ The `carson-word-bridge` MCP server exposes these tools. Prefer the higher-level
 
 ## Operating guidance
 
+- **Use the task-management tool to batch edits.** If your harness environment exposes a task list tool (for example a `TODO` tool, `Task` tool, or equivalent), use it to break the work into grouped edit passes before touching the document. Batch related edits together (for example: "collect context", "enable Track Changes", "apply heading fixes", "apply defined-term fixes", "verify") instead of doing one bridge call per tiny change with no plan.
 - **Always read before you write.** Call `read_doc_section` or `inspect_selection` before applying edits, so you're acting on current state.
 - **Treat paragraph ranges as inclusive.** `paragraph_start: 1, paragraph_end: 2` targets paragraphs 1 and 2. Use the returned `resolved_start` / `resolved_end` values to confirm what was read.
 - **For style operations, prefer the `style` field.** `apply_formatting` accepts `{type:"paragraph_style", style:"Normal"}` and `{type:"paragraph_style", value:"Normal"}`, but `style` is clearer and should be the default.
 - **Use snapshots for non-trivial edits.** `snapshot_document` with `label="before"`, do the edit, `snapshot_document` with `label="after"`. This lets you recover and lets the user audit.
 - **Prefer `apply_formatting` over `execute_office_js`.** The structured tool handles the common cases safely; only drop to office.js for things it can't express.
 - **Turn on Track Changes for redlines.** Call `set_track_changes` with `enabled=true` before redline-style edits so the user can review them in Word.
+- **Make each batch coherent and verifiable.** Read the affected region once, perform the grouped edits for that region, then snapshot or verify before moving to the next batch. This reduces bridge chatter and makes failures easier to recover from.
 - **Verify after substantial changes.** Run `verify_doc` to catch broken styles or malformed tables.
 
 ## When to use this skill vs Anthropic's `docx` skill
