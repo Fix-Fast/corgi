@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import re
 import shutil
 import subprocess
@@ -84,48 +85,134 @@ def run_formatter(source: Path, output: Path, parts: Path) -> None:
     )
 
 
-def canonicalize_xml(data: bytes) -> str:
-    parser = etree.XMLParser(remove_blank_text=False)
-    root = etree.fromstring(data, parser=parser)
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+W = f"{{{W_NS}}}"
+
+
+def _strip_volatile_attrs(root: etree._Element) -> None:
     for el in root.iter():
         for attr in list(el.attrib):
             if VOLATILE_ATTR_RE.search(attr):
                 del el.attrib[attr]
+
+
+def _hash_element(el: etree._Element) -> str:
+    """Stable content hash for an OOXML element, ignoring its own ID-bearing attrs."""
+    clone = etree.fromstring(etree.tostring(el))
+    for attr in (f"{W}abstractNumId", f"{W}numId"):
+        if attr in clone.attrib:
+            del clone.attrib[attr]
+    canonical = etree.tostring(clone, method="c14n2")
+    return hashlib.sha1(canonical).hexdigest()[:12]
+
+
+def renumber_ids(numbering_xml: bytes, document_xml: bytes) -> tuple[bytes, bytes]:
+    """Rewrite abstractNumId / numId values to content-derived hashes.
+
+    Word's `numId` and `abstractNumId` are arbitrary integers; allocation order
+    is not part of the document's meaning. Two formatters that produce the same
+    numbering definitions but in different allocation orders are equivalent.
+    Normalize so the diff doesn't flag pure ID reshuffles.
+    """
+    num_root = etree.fromstring(numbering_xml)
+    abstract_id_map: dict[str, str] = {}
+    for ab in num_root.findall(f"{W}abstractNum"):
+        old = ab.get(f"{W}abstractNumId")
+        abstract_id_map[old] = "A" + _hash_element(ab)
+
+    # First pass: rename abstractNumId references inside <w:num> so num hashes
+    # are computed against the canonicalized form.
+    for num in num_root.findall(f"{W}num"):
+        ref = num.find(f"{W}abstractNumId")
+        if ref is not None:
+            old = ref.get(f"{W}val")
+            if old in abstract_id_map:
+                ref.set(f"{W}val", abstract_id_map[old])
+
+    num_id_map: dict[str, str] = {}
+    for num in num_root.findall(f"{W}num"):
+        old = num.get(f"{W}numId")
+        num_id_map[old] = "N" + _hash_element(num)
+
+    # Apply renames in numbering.xml.
+    for ab in num_root.findall(f"{W}abstractNum"):
+        old = ab.get(f"{W}abstractNumId")
+        ab.set(f"{W}abstractNumId", abstract_id_map[old])
+    for num in num_root.findall(f"{W}num"):
+        old = num.get(f"{W}numId")
+        num.set(f"{W}numId", num_id_map[old])
+
+    # Sort children for stable ordering.
+    abstracts = sorted(num_root.findall(f"{W}abstractNum"), key=lambda e: e.get(f"{W}abstractNumId"))
+    nums = sorted(num_root.findall(f"{W}num"), key=lambda e: e.get(f"{W}numId"))
+    others = [c for c in num_root if c.tag not in (f"{W}abstractNum", f"{W}num")]
+    for child in list(num_root):
+        num_root.remove(child)
+    for c in others + abstracts + nums:
+        num_root.append(c)
+
+    # Apply numId renames in document.xml.
+    doc_root = etree.fromstring(document_xml)
+    for el in doc_root.iter(f"{W}numId"):
+        old = el.get(f"{W}val")
+        if old in num_id_map:
+            el.set(f"{W}val", num_id_map[old])
+
+    return (
+        etree.tostring(num_root, xml_declaration=True, encoding="UTF-8", standalone=True),
+        etree.tostring(doc_root, xml_declaration=True, encoding="UTF-8", standalone=True),
+    )
+
+
+def canonicalize_xml(data: bytes) -> str:
+    root = etree.fromstring(data)
+    _strip_volatile_attrs(root)
     return etree.tostring(root, pretty_print=True, encoding="unicode")
 
 
+def load_canonical(path: Path) -> dict[str, object]:
+    """Read a docx, return {member_name: canonical_str_or_bytes}, with numbering IDs normalized."""
+    with zipfile.ZipFile(path) as zf:
+        members = {n: zf.read(n) for n in zf.namelist() if n not in SKIP_MEMBERS}
+    if "word/numbering.xml" in members and "word/document.xml" in members:
+        members["word/numbering.xml"], members["word/document.xml"] = renumber_ids(
+            members["word/numbering.xml"], members["word/document.xml"]
+        )
+    out: dict[str, object] = {}
+    for name, data in members.items():
+        if name.endswith(".xml") or name.endswith(".rels"):
+            out[name] = canonicalize_xml(data)
+        else:
+            out[name] = data
+    return out
+
+
 def diff_docx(produced: Path, golden: Path) -> list[str]:
-    with zipfile.ZipFile(produced) as p_zip, zipfile.ZipFile(golden) as g_zip:
-        p_names = set(p_zip.namelist()) - SKIP_MEMBERS
-        g_names = set(g_zip.namelist()) - SKIP_MEMBERS
-        problems: list[str] = []
-        only_p = sorted(p_names - g_names)
-        only_g = sorted(g_names - p_names)
-        for n in only_p:
-            problems.append(f"only in produced: {n}")
-        for n in only_g:
-            problems.append(f"only in golden: {n}")
-        for name in sorted(p_names & g_names):
-            p_bytes = p_zip.read(name)
-            g_bytes = g_zip.read(name)
-            if name.endswith(".xml") or name.endswith(".rels"):
-                p_norm = canonicalize_xml(p_bytes)
-                g_norm = canonicalize_xml(g_bytes)
-                if p_norm != g_norm:
-                    diff = list(
-                        difflib.unified_diff(
-                            g_norm.splitlines(keepends=True),
-                            p_norm.splitlines(keepends=True),
-                            fromfile=f"golden:{name}",
-                            tofile=f"produced:{name}",
-                            n=2,
-                        )
-                    )
-                    problems.append(f"--- {name} ---\n" + "".join(diff[:200]))
-            else:
-                if p_bytes != g_bytes:
-                    problems.append(f"binary mismatch: {name} (produced={len(p_bytes)}B golden={len(g_bytes)}B)")
-        return problems
+    p_members = load_canonical(produced)
+    g_members = load_canonical(golden)
+    problems: list[str] = []
+    for n in sorted(set(p_members) - set(g_members)):
+        problems.append(f"only in produced: {n}")
+    for n in sorted(set(g_members) - set(p_members)):
+        problems.append(f"only in golden: {n}")
+    for name in sorted(set(p_members) & set(g_members)):
+        p_v, g_v = p_members[name], g_members[name]
+        if p_v == g_v:
+            continue
+        if isinstance(p_v, str):
+            diff = list(
+                difflib.unified_diff(
+                    g_v.splitlines(keepends=True),
+                    p_v.splitlines(keepends=True),
+                    fromfile=f"golden:{name}",
+                    tofile=f"produced:{name}",
+                    n=2,
+                )
+            )
+            problems.append(f"--- {name} ---\n" + "".join(diff[:200]))
+        else:
+            problems.append(f"binary mismatch: {name} (produced={len(p_v)}B golden={len(g_v)}B)")
+    return problems
 
 
 def assert_equal(label: str, produced: Path, golden: Path, max_lines: int) -> bool:
