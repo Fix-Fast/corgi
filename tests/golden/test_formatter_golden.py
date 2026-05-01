@@ -66,12 +66,7 @@ FIXTURES = [
         original=FIXTURE_DIR / "seic_do_original.docx",
         golden=FIXTURE_DIR / "seic_do_original_formatted.docx",
         parts=FIXTURE_DIR / "seic_do_original.parts.json",
-        # Idempotency requires a formatted-input parts.json that resolves
-        # against the post-Rule-0 paragraph text. Generating that automatically
-        # is awkward because Rule 0 rewrites subheadings (e.g. "A. Cancellation"
-        # -> "1) Cancellation") and Rule 1 absorbs surrounding text into them.
-        # Left for a future precommit; the rewrite itself is idempotent (CGL test 2 passes).
-        parts_formatted=None,
+        parts_formatted=FIXTURE_DIR / "seic_do_original_formatted.parts.json",
     ),
 ]
 
