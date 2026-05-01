@@ -1,0 +1,102 @@
+{
+  "ignored_body_texts": [
+    "SEIC-DO-0100",
+    "DIRECTORS AND OFFICERS LIABILITY\nSPORTS AND ENTERTAINMENT ORGANIZATION",
+    "SPORTS AND ENTERTAINMENT ORGANIZATION\nSECTION I."
+  ],
+  "title_texts": [
+    "DIRECTORS AND OFFICERS LIABILITY\nINSURANCE POLICY",
+    "INSURANCE POLICY",
+    "SPORTS AND ENTERTAINMENT ORGANIZATION\nMANAGEMENT LIABILITY COVERAGE",
+    "MANAGEMENT LIABILITY COVERAGE"
+  ],
+  "section_heading_texts": [
+    "SECTION I. INSURING AGREEMENTS",
+    "SECTION II. DEFINITIONS",
+    "SECTION III. EXCLUSIONS",
+    "SECTION IV. LIMITATIONS OF LIABILITY AND RETENTIONS",
+    "SECTION V. NOTICE OF CLAIM AND POTENTIAL CLAIMS",
+    "SECTION VI. COSTS OF DEFENSE AND SETTLEMENT",
+    "SECTION VII. EXTENDED REPORTING PERIOD (DISCOVERY PERIOD)",
+    "SECTION VIII. GENERAL CONDITIONS"
+  ],
+  "subheading_texts": [
+    "NOTICES:",
+    "Insuring Agreement A – Non-Indemnifiable",
+    "Insuring Agreement B – Indemnifiable",
+    "Insuring Agreement C – Entity Liability",
+    "Insuring Agreement D – Crisis Management",
+    "A.  Cancellation",
+    "B.  Application",
+    "C.  Action Against the Insurer",
+    "D.  Conversion to Run-Off Coverage",
+    "E.  Outside Entity and Joint Venture Provision",
+    "F.  Other Insurance",
+    "G.  Coverage Extensions",
+    "H.  Priority of Payments",
+    "I.  Subrogation",
+    "J.  Choice of Law",
+    "K.  Assignment",
+    "L.  Organization Represents Insureds",
+    "M.  Representative of the Insurer",
+    "N.  Bankruptcy",
+    "O.  Conformity to Statute",
+    "P.  Headings",
+    "Q.  Entire Agreement",
+    "R.  Dispute Resolution",
+    "S.  Service of Suit",
+    "T.  Related Wrongful Acts"
+  ],
+  "outline_normalizations": [
+    {
+      "section_text": "SECTION II. DEFINITIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\.", "sequence": "decimal"},
+        {"pattern": "([a-z])\\.", "sequence": "lower_alpha"},
+        {"pattern": "\\(([ivx]+)\\)", "sequence": "lower_roman"}
+      ]
+    },
+    {
+      "section_text": "SECTION III. EXCLUSIONS",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"},
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "\\(([ivx]+)\\)", "sequence": "lower_roman"}
+      ]
+    },
+    {
+      "section_text": "SECTION IV. LIMITATIONS OF LIABILITY AND RETENTIONS",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION V. NOTICE OF CLAIM AND POTENTIAL CLAIMS",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION VI. COSTS OF DEFENSE AND SETTLEMENT",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION VII. EXTENDED REPORTING PERIOD (DISCOVERY PERIOD)",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION VIII. GENERAL CONDITIONS",
+      "source_levels": [
+        {"pattern": "([A-Z])\\.", "sequence": "upper_alpha"},
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"}
+      ]
+    }
+  ],
+  "header_title_text": "Directors and Officers Liability Policy",
+  "policy_code": "SEIC-DO-0100"
+}

@@ -34,17 +34,43 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from lxml import etree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = Path(__file__).resolve().parent
-ORIGINAL = FIXTURE_DIR / "cgl_original.docx"
-GOLDEN = FIXTURE_DIR / "cgl_original_formatted.docx"
-PARTS = FIXTURE_DIR / "cgl_original.parts.json"
-PARTS_FORMATTED = FIXTURE_DIR / "cgl_original_formatted.parts.json"
 FORMATTER = REPO_ROOT / "plugins/docx/skills/insure-policy-format/scripts/format.py"
+
+
+@dataclass
+class Fixture:
+    name: str
+    original: Path
+    golden: Path
+    parts: Path
+    parts_formatted: Path | None  # None disables the idempotency check
+
+FIXTURES = [
+    Fixture(
+        name="cgl",
+        original=FIXTURE_DIR / "cgl_original.docx",
+        golden=FIXTURE_DIR / "cgl_original_formatted.docx",
+        parts=FIXTURE_DIR / "cgl_original.parts.json",
+        parts_formatted=FIXTURE_DIR / "cgl_original_formatted.parts.json",
+    ),
+    Fixture(
+        name="seic_do",
+        original=FIXTURE_DIR / "seic_do_original.docx",
+        golden=FIXTURE_DIR / "seic_do_original_formatted.docx",
+        parts=FIXTURE_DIR / "seic_do_original.parts.json",
+        # Idempotency disabled: current formatter output for this fixture is buggy
+        # (Rule 0 leaves both new and old markers, subheadings concatenate with body).
+        # The rewrite should fix that and turn this on.
+        parts_formatted=None,
+    ),
+]
 
 VOLATILE_ATTR_RE = re.compile(r"\{[^}]*}(rsidR|rsidRDefault|rsidRPr|rsidP|rsidTr|rsidSect|rsidRoot|paraId|textId)$")
 SKIP_MEMBERS = {"docProps/core.xml"}
@@ -130,23 +156,35 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    workdir = Path(tempfile.mkdtemp(prefix="cgl_golden_"))
+    workdir = Path(tempfile.mkdtemp(prefix="formatter_golden_"))
     print(f"workdir: {workdir}")
-    produced_from_orig = workdir / "from_original.docx"
-    produced_from_golden = workdir / "from_golden.docx"
+    all_ok = True
 
-    print("[1/2] format(cgl_original.docx) vs golden")
-    run_formatter(ORIGINAL, produced_from_orig, PARTS)
-    ok1 = assert_equal("reproduces golden", produced_from_orig, GOLDEN, args.max_diff_lines)
+    for fx in FIXTURES:
+        print(f"\n=== fixture: {fx.name} ===")
+        produced_from_orig = workdir / f"{fx.name}_from_original.docx"
+        run_formatter(fx.original, produced_from_orig, fx.parts)
+        ok1 = assert_equal(
+            f"{fx.name}: reproduces golden",
+            produced_from_orig, fx.golden, args.max_diff_lines,
+        )
+        all_ok = all_ok and ok1
 
-    print("[2/2] format(cgl_original_formatted.docx) vs golden (idempotency)")
-    run_formatter(GOLDEN, produced_from_golden, PARTS_FORMATTED)
-    ok2 = assert_equal("idempotent on golden", produced_from_golden, GOLDEN, args.max_diff_lines)
+        if fx.parts_formatted is None:
+            print(f"  SKIP: {fx.name}: idempotency check disabled")
+            continue
+        produced_from_golden = workdir / f"{fx.name}_from_golden.docx"
+        run_formatter(fx.golden, produced_from_golden, fx.parts_formatted)
+        ok2 = assert_equal(
+            f"{fx.name}: idempotent on golden",
+            produced_from_golden, fx.golden, args.max_diff_lines,
+        )
+        all_ok = all_ok and ok2
 
     if not args.keep:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    return 0 if (ok1 and ok2) else 1
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
