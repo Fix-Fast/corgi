@@ -143,15 +143,40 @@ For example, all of these are recognized as the same kind of list item:
 If list content is still written as typed markers in plain text, it
 should be converted into a native list.
 
-If a paragraph contains multiple embedded list markers, it should be
-split into separate list paragraphs. A piece of text only counts as a
-list marker if it stands on its own — at the start of a paragraph, or
-after a space and not stuck to a word or number. So `officer(s)`,
-`§4958(c)`, and `Section 4958(a)(2)` are left alone, because the `(s)`,
-`(c)`, and `(a)` are part of words or citations, not list markers.
+A paragraph is a list item only when its **leading** text is a list
+marker. Markers embedded mid-paragraph are left as plain text — this
+matches Word's native behavior (typing `1) Foo and 2) Bar` mid-list
+gives you one item, not two). Authors who want separate items must
+write them as separate paragraphs in the source.
+
+A piece of text only counts as a leading marker if it stands on its
+own — at the start of the paragraph, separated from the body text by a
+space (or a tab to be normalized to a space). Citations like
+`officer(s)`, `§4958(c)`, and `Section 4958(a)(2)` are left alone
+because the `(s)`, `(c)`, and `(a)` are not in leading position.
 
 If a paragraph continues a list item, it should stay attached to that
 list item.
+
+```
+SECTION II: INSURING AGREEMENTS
+
+1) Allocation: ...
+
+   a) Defense Costs: The covered portion of Defense Costs incurred in
+      defending a Demand will be considered covered Loss, ...
+
+      Notwithstanding the foregoing, we may, at our discretion, allocate
+      Defense Costs between covered and uncovered matters.
+```
+
+The continuation paragraph aligns with the body text of its parent item,
+not with the page margin or the marker column.
+
+List counters restart at every section heading (Heading 2). Two list
+items at the same level under different sections are numbered
+independently — `1)` under SECTION II is unrelated to `1)` under
+SECTION III.
 
 The list should use these level formats:
 
@@ -226,5 +251,11 @@ The full formatter is the composition of:
 
 1. `rule_0.py` (only fires for sections listed in `outline_normalizations`)
 2. `rule_1.py`
-3. `rule_3.py`
-4. `rule_2.py`
+3. `rule_2.py`
+4. `rule_3.py`
+
+Each rule is `(doc, parts) -> doc`: it mutates the OOXML tree in place.
+Downstream rules read upstream effects from the doc itself — Rule 2
+reads `pStyle` to know which paragraphs are headings, Rule 3 reads
+`sectPr` to find sections. No out-of-band state is passed between
+rules.

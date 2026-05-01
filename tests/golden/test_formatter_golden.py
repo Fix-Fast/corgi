@@ -66,9 +66,11 @@ FIXTURES = [
         original=FIXTURE_DIR / "seic_do_original.docx",
         golden=FIXTURE_DIR / "seic_do_original_formatted.docx",
         parts=FIXTURE_DIR / "seic_do_original.parts.json",
-        # Idempotency disabled: current formatter output for this fixture is buggy
-        # (Rule 0 leaves both new and old markers, subheadings concatenate with body).
-        # The rewrite should fix that and turn this on.
+        # Idempotency requires a formatted-input parts.json that resolves
+        # against the post-Rule-0 paragraph text. Generating that automatically
+        # is awkward because Rule 0 rewrites subheadings (e.g. "A. Cancellation"
+        # -> "1) Cancellation") and Rule 1 absorbs surrounding text into them.
+        # Left for a future precommit; the rewrite itself is idempotent (CGL test 2 passes).
         parts_formatted=None,
     ),
 ]
@@ -89,11 +91,35 @@ W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = f"{{{W_NS}}}"
 
 
+_PPR_TAG = W + "pPr"
+_RPR_TAG = W + "rPr"
+# Sort the children of pPr / rPr deterministically. OOXML doesn't render
+# differently based on the order of these property children, but a string
+# diff of pretty-printed XML does, so canonicalize before comparing.
+_SORT_TAGS = {_PPR_TAG, _RPR_TAG}
+
+
 def _strip_volatile_attrs(root: etree._Element) -> None:
     for el in root.iter():
         for attr in list(el.attrib):
             if VOLATILE_ATTR_RE.search(attr):
                 del el.attrib[attr]
+
+
+def _sort_property_children(root: etree._Element) -> None:
+    """Sort children of every pPr/rPr by their tag, stably.
+
+    The schema technically prescribes an order, but Word renders the same
+    paragraph regardless. Sorting by tag makes the diff insensitive to
+    formatter implementation choices about insertion order.
+    """
+    for el in root.iter():
+        if el.tag in _SORT_TAGS:
+            children = sorted(el, key=lambda c: c.tag)
+            for c in list(el):
+                el.remove(c)
+            for c in children:
+                el.append(c)
 
 
 def _hash_element(el: etree._Element) -> str:
@@ -167,6 +193,7 @@ def renumber_ids(numbering_xml: bytes, document_xml: bytes) -> tuple[bytes, byte
 def canonicalize_xml(data: bytes) -> str:
     root = etree.fromstring(data)
     _strip_volatile_attrs(root)
+    _sort_property_children(root)
     return etree.tostring(root, pretty_print=True, encoding="unicode")
 
 

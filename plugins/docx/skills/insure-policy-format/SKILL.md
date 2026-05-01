@@ -34,8 +34,6 @@ Packaged docs:
 - `uv` on PATH (https://docs.astral.sh/uv/). The script declares its own
   Python and dependency requirements inline via PEP 723; `uv` handles
   environment setup automatically on first run.
-- `pandoc` on PATH. The pipeline shells out to pandoc for DOCX → JSON
-  AST conversion.
 
 ## Usage
 
@@ -46,11 +44,14 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/insure-policy-format/scripts/format.py" \
   --parts-in /abs/path/to/policy.parts.json
 ```
 
-Rule-oriented scripts are available as the public interface:
+The pipeline composes four pure rules (`(doc, parts) -> doc`) in
+numerical order, mutating the OOXML tree directly:
 
-- `rule_1.py` — converge text hierarchy and body/heading styling
-- `rule_2.py` — converge list structure and list formatting
-- `rule_3.py` — converge page layout and running header
+- `rule_0.py` — outline marker normalization (pre-pass; only fires when
+  `outline_normalizations` is set)
+- `rule_1.py` — text hierarchy and body/heading styling
+- `rule_2.py` — list structure and list formatting
+- `rule_3.py` — page layout and running header
 
 ## Claude prompt contract
 
@@ -198,12 +199,17 @@ In the example above:
 
 ## What the pipeline does
 
-1. `rule_1.py`: rebuild canonical document structure from the supplied
-   document parts and apply heading/body text styling.
-2. `rule_3.py`: apply section layout and the running header from the
-   supplied document parts.
-3. `rule_2.py`: normalize list numbering, suffix spacing, indentation,
-   and list-marker styling.
+1. `rule_0.py` (conditional): rewrite non-canonical outline markers
+   (e.g. `A./1)/a)`) to canonical (`1)/a)/i)`) within sections flagged
+   in `outline_normalizations`.
+2. `rule_1.py`: classify paragraphs into title / section heading /
+   subheading / body via parts.json indices and apply the corresponding
+   pStyle and run formatting.
+3. `rule_2.py`: detect list markers in body paragraphs, split paragraphs
+   on embedded markers, assign numPr at the correct level, and install a
+   single canonical multilevel numbering definition.
+4. `rule_3.py`: set page margins, install the running header part, and
+   wire it up via section properties.
 
 Output is formatting-deterministic: for the same input DOCX, the
 formatter produces the same document structure and styling. Container

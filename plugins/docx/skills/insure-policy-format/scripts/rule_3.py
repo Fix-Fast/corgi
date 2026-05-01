@@ -1,39 +1,134 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11,<3.13"
-# dependencies = [
-#   "python-docx>=1.2.0",
-#   "lxml>=5.4.0",
-# ]
-# ///
+"""Rule 3: page layout + running header.
+
+Per format.md §3:
+
+    Margins:    top 0.7"  bottom 0.7"  left 1.0"  right 1.0"
+    Header dist: 0.35"
+    Header text: <Title><TAB><Policy Code>
+    Header para: left-aligned, right-aligned tab stop at 6.3",
+                 Inter, 10pt, gray RGB 128,128,128
+
+If only one of <title>/<policy_code> is supplied, the header still uses
+the available value (no tab in that case).
+"""
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
+from lxml import etree
 
-from formatter import apply_page_layout_and_header
+from _docx import (
+    NSMAP,
+    RunFormat,
+    W,
+    apply_run_format,
+    get_or_create_rPr,
+    inches_to_twips,
+    make_element,
+)
+from parts import ResolvedParts
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="insure-policy-format-rule-3",
-        description="Converge page layout and the running header to the canonical state.",
+HEADER_PART_NAME = "header_corgi.xml"
+HEADER_REL_ID = "rIdCorgiHeader"
+HEADER_RELS_TARGET = HEADER_PART_NAME
+
+
+_HEADER_FMT = RunFormat(font="Inter", size_pt=10, color_hex="808080")
+
+
+def _set_section_geometry(sectPr: etree._Element) -> None:
+    """Set pgMar and remove any existing header/footer references."""
+    # Page margins.
+    for el in sectPr.findall(W + "pgMar"):
+        sectPr.remove(el)
+    sectPr.append(make_element("pgMar", {
+        "top": str(inches_to_twips(0.7)),
+        "bottom": str(inches_to_twips(0.7)),
+        "left": str(inches_to_twips(1.0)),
+        "right": str(inches_to_twips(1.0)),
+        "header": str(inches_to_twips(0.35)),
+        "footer": str(inches_to_twips(0.5)),
+        "gutter": "0",
+    }))
+
+
+def _replace_header_reference(sectPr: etree._Element, rel_id: str) -> None:
+    """Drop any existing headerReference children and add a single 'default' one."""
+    for el in sectPr.findall(W + "headerReference"):
+        sectPr.remove(el)
+    href = make_element("headerReference", {"type": "default"})
+    href.set(
+        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id",
+        rel_id,
     )
-    parser.add_argument("source_docx", type=Path)
-    parser.add_argument("target_docx", type=Path)
-    parser.add_argument("--parts-in", type=Path, required=True)
-    return parser
+    # headerReference belongs at the start of sectPr per OOXML; insert at index 0.
+    sectPr.insert(0, href)
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    apply_page_layout_and_header(
-        args.source_docx,
-        args.target_docx,
-        parts_in=args.parts_in,
+def _build_header_part(header_title: str | None, policy_code: str | None) -> bytes:
+    """Build a complete word/header_corgi.xml document for the running header."""
+    nsmap = {
+        "w": NSMAP["w"],
+        "xml": "http://www.w3.org/XML/1998/namespace",
+    }
+    hdr = etree.Element(W + "hdr", nsmap=nsmap)
+    p = etree.SubElement(hdr, W + "p")
+
+    pPr = etree.SubElement(p, W + "pPr")
+    tabs = etree.SubElement(pPr, W + "tabs")
+    tab = etree.SubElement(tabs, W + "tab")
+    tab.set(W + "val", "right")
+    tab.set(W + "pos", str(inches_to_twips(6.3)))
+    jc = etree.SubElement(pPr, W + "jc")
+    jc.set(W + "val", "left")
+
+    title = (header_title or "").strip()
+    code = (policy_code or "").strip()
+    if title and code:
+        _add_run(p, title)
+        _add_tab(p)
+        _add_run(p, code)
+    elif title:
+        _add_run(p, title)
+    elif code:
+        _add_run(p, code)
+    # else: empty header paragraph (still valid).
+
+    return etree.tostring(
+        hdr, xml_declaration=True, encoding="UTF-8", standalone=True,
     )
-    return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def _add_run(p: etree._Element, text: str) -> None:
+    r = etree.SubElement(p, W + "r")
+    apply_run_format(r, _HEADER_FMT)
+    t = etree.SubElement(r, W + "t")
+    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    t.text = text
+
+
+def _add_tab(p: etree._Element) -> None:
+    r = etree.SubElement(p, W + "r")
+    apply_run_format(r, _HEADER_FMT)
+    etree.SubElement(r, W + "tab")
+
+
+def apply(doc_root: etree._Element, parts: ResolvedParts) -> tuple[etree._Element, bytes]:
+    """Apply Rule 3 in place. Returns (mutated doc_root, header_xml_bytes).
+
+    The caller is responsible for installing header_xml_bytes into the
+    docx zip at word/header_corgi.xml and updating the relationships /
+    content-types parts (those live outside this rule's purview because
+    they cross the in-memory tree boundary).
+    """
+    body = doc_root.find(W + "body")
+    if body is None:
+        raise ValueError("document.xml has no <w:body>")
+    sectPr = body.find(W + "sectPr")
+    if sectPr is None:
+        sectPr = make_element("sectPr")
+        body.append(sectPr)
+    _set_section_geometry(sectPr)
+    _replace_header_reference(sectPr, HEADER_REL_ID)
+
+    header_bytes = _build_header_part(parts.header_title_text, parts.policy_code)
+    return doc_root, header_bytes
