@@ -327,16 +327,93 @@ def trim_trailing_chars_from_inlines(inlines: List[dict], n: int) -> List[dict]:
     return out
 
 
+_ROMAN_PAIRS = [
+    (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+    (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+    (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i"),
+]
+
+
+def _render_roman(n: int, upper: bool) -> str:
+    out = ""
+    for value, sym in _ROMAN_PAIRS:
+        while n >= value:
+            out += sym
+            n -= value
+    return out.upper() if upper else out
+
+
+def _render_alpha(n: int, upper: bool) -> str:
+    s = ""
+    while n > 0:
+        n -= 1
+        s = chr(ord("a") + (n % 26)) + s
+        n //= 26
+    return s.upper() if upper else s
+
+
+def _render_list_marker(n: int, style: str, delim: str) -> str:
+    if style == "UpperRoman":
+        token = _render_roman(n, upper=True)
+    elif style == "LowerRoman":
+        token = _render_roman(n, upper=False)
+    elif style == "UpperAlpha":
+        token = _render_alpha(n, upper=True)
+    elif style == "LowerAlpha":
+        token = _render_alpha(n, upper=False)
+    else:
+        token = str(n)
+    if delim == "OneParen":
+        return token + ")"
+    if delim == "TwoParens":
+        return "(" + token + ")"
+    return token + "."
+
+
+def _inject_marker_into_item(item_blocks: List[dict], marker: str) -> List[dict]:
+    prefix = [{"t": "Str", "c": marker}, {"t": "Space"}]
+    out: List[dict] = []
+    injected = False
+    for b in item_blocks:
+        if not injected and b.get("t") in ("Para", "Plain"):
+            out.append({"t": b["t"], "c": prefix + b["c"]})
+            injected = True
+        else:
+            out.append(b)
+    if not injected:
+        out.insert(0, {"t": "Para", "c": list(prefix)})
+    return out
+
+
 def flatten_paras(blocks: List[dict], depth: int = 0) -> List[SourcePara]:
     out: List[SourcePara] = []
     for block in blocks:
         kind = block["t"]
-        if kind == "Para":
+        if kind in ("Para", "Plain"):
             text = normalize_text(inlines_to_text(block["c"]))
             if text:
                 out.append(SourcePara(block["c"], text, depth, -1))
+        elif kind == "Header":
+            inlines = block["c"][2]
+            text = normalize_text(inlines_to_text(inlines))
+            if text:
+                out.append(SourcePara(inlines, text, depth, -1))
         elif kind == "BlockQuote":
             out.extend(flatten_paras(block["c"], depth + 1))
+        elif kind == "Div":
+            out.extend(flatten_paras(block["c"][1], depth))
+        elif kind == "OrderedList":
+            attrs, items = block["c"]
+            start = attrs[0]
+            style = attrs[1]["t"] if isinstance(attrs[1], dict) else attrs[1]
+            delim = attrs[2]["t"] if isinstance(attrs[2], dict) else attrs[2]
+            for i, item_blocks in enumerate(items):
+                marker = _render_list_marker(start + i, style, delim)
+                injected = _inject_marker_into_item(item_blocks, marker)
+                out.extend(flatten_paras(injected, depth))
+        elif kind == "BulletList":
+            for item_blocks in block["c"]:
+                out.extend(flatten_paras(item_blocks, depth))
     for index, para in enumerate(out):
         para.index = index
     return out
