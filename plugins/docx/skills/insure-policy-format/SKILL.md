@@ -256,7 +256,12 @@ Cross-cutting (rarely edited via `format.md` changes alone):
 
 ### The loop
 
-1. Edit `format.md`.
+1. Edit `format.md`. `format.md` is human-authored — when the user asks
+   to update the formatting rules, open it in their editor first
+   (macOS: `open plugins/docx/skills/insure-policy-format/format.md`,
+   which uses their default rich-text/markdown editor) and wait for
+   them to make changes before proceeding. The agent's job is
+   propagation, not authorship.
 2. Use the index above to find the affected script(s).
 3. Edit the script(s) to match.
 4. Run the goldens: `uv run tests/golden/test_formatter_golden.py`.
