@@ -38,6 +38,26 @@ def inches_to_twips(inches: float) -> int:
 
 
 @dataclass
+class Doc:
+    """The mutable bundle of OOXML trees a rule may need.
+
+    Each rule has signature `(doc: Doc, parts: ResolvedParts) -> Doc`
+    and mutates whichever fields it cares about:
+
+    - `document` — `word/document.xml` (always present)
+    - `numbering` — `word/numbering.xml` (always present; created empty
+      if the source didn't carry one)
+    - `styles` — `word/styles.xml` (always present)
+    - `header` — `word/header_corgi.xml`, populated by Rule 3
+    """
+
+    document: etree._Element
+    numbering: etree._Element
+    styles: etree._Element
+    header: etree._Element | None = None
+
+
+@dataclass
 class RunFormat:
     """Run-level character formatting block applied as a unit.
 

@@ -1,27 +1,20 @@
-"""Rule 2: list normalization.
+"""Rule 2: lists.
 
-Per format.md §2:
+Per format.md §2 — Lists.
 
-    - Marker sequence: 1)/1.  a)/a.  i)/i.  (1)  (a)  (i)
-    - Top three levels: closing ')' or '.' both accepted; parenthesized
-      forms require both parens.
-    - List markers must stand on their own (start of paragraph or after
-      space, not stuck to a word/citation like officer(s) or §4958(c)).
-    - Multiple embedded markers in a paragraph -> split into separate
-      list paragraphs.
-    - Continuation paragraph stays attached to its list item.
-    - Level format definitions: L0..L5 use canonical numFmt + lvlText
-      with the indents in the spec (720/1440/2160/2880/3600/4320 left,
-      360 hanging across the board).
-    - Single space between marker and body, not tab.
-    - Strip paragraph-level indent overrides on list paragraphs.
-    - List markers: Inter, 11pt, black.
+This rule has two phases:
 
-Implementation: rewrite numbering.xml to a single canonical multilevel
-abstractNum + num. Walk every body paragraph (skipping headings); detect
-leading + embedded markers; split paragraphs on embedded markers; assign
-numPr (referencing our single num) and ilvl per detected shape; strip
-the marker text from the paragraph's runs (numbering renders it).
+1. Outline marker normalization (pre-pass). Source documents flagged
+   in `outline_normalizations` use non-canonical marker styles (e.g.
+   uppercase Roman at the top level). Rewrite their markers in-place
+   to the canonical ladder before list detection runs.
+
+2. List detection. Walk body paragraphs (skipping headings); detect
+   leading list markers; assign `numPr` per detected level; strip the
+   marker text from the paragraph's runs (numbering renders it). A
+   single canonical multilevel abstractNum is installed in
+   numbering.xml; one `<w:num>` instance is allocated per Heading 2
+   so list counters restart at every section boundary.
 """
 from __future__ import annotations
 
@@ -31,16 +24,249 @@ from dataclasses import dataclass
 from lxml import etree
 
 from _docx import (
+    Doc,
     W,
     clear_pPr_child,
     get_body,
     get_pstyle,
     iter_paragraphs,
     make_element,
+    paragraph_text,
     set_indent,
     set_numPr,
 )
+from parts import LevelSpec, ResolvedParts
 from rule_1 import SECTION_STYLE_ID, SUBHEAD_STYLE_ID, TITLE_STYLE_ID
+
+
+# ---------------------------------------------------------------------
+# Phase 1: outline marker normalization (pre-pass).
+#
+# Rewrite source markers in flagged sections to the canonical ladder
+# (`A.` -> `1.` -> `a.` -> `1.` -> `a.` -> `i.`) so phase 2 sees only
+# canonical markers. Per format.md §2 / "Outline marker normalization":
+#
+# - Range = from a flagged section heading up to (but excluding) the
+#   next section heading. Section headings are identified by the
+#   Heading 2 pStyle that Rule 1 has already applied.
+# - Counters reset to 0 for all levels deeper than the one that just
+#   fired.
+# - Both leading and embedded markers in a paragraph are rewritten.
+# - Embedded scans use a non-word-boundary guard so citations
+#   (`Section IV.A.`, `officer(s)`, `§4958(c)`, `sixty (60) days`)
+#   stay as plain text.
+# ---------------------------------------------------------------------
+
+
+_CANONICAL_LEVEL_FORMS: tuple[tuple[str, str, str], ...] = (
+    ("upper_alpha", "{}", "."),
+    ("decimal", "{}", "."),
+    ("lower_alpha", "{}", "."),
+    ("decimal", "{}", "."),
+    ("lower_alpha", "{}", "."),
+    ("lower_roman", "{}", "."),
+)
+
+
+_ROMAN_PAIRS = (
+    (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+    (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+    (10, "x"), (9, "ix"), (5, "v"), (4, "iv"),
+    (1, "i"),
+)
+
+
+def _to_roman(n: int, upper: bool) -> str:
+    if n < 1:
+        raise ValueError(f"roman index must be >= 1, got {n}")
+    out = ""
+    for value, sym in _ROMAN_PAIRS:
+        while n >= value:
+            out += sym
+            n -= value
+    return out.upper() if upper else out
+
+
+def _to_alpha(n: int, upper: bool) -> str:
+    if n < 1:
+        raise ValueError(f"alpha index must be >= 1, got {n}")
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(ord("a") + rem) + out
+    return out.upper() if upper else out
+
+
+def _format_token(sequence: str, n: int) -> str:
+    if sequence == "decimal":
+        return str(n)
+    if sequence == "lower_alpha":
+        return _to_alpha(n, upper=False)
+    if sequence == "upper_alpha":
+        return _to_alpha(n, upper=True)
+    if sequence == "lower_roman":
+        return _to_roman(n, upper=False)
+    if sequence == "upper_roman":
+        return _to_roman(n, upper=True)
+    raise ValueError(f"unknown sequence type: {sequence!r}")
+
+
+def _canonical_marker(level_idx: int, counter: int) -> str:
+    if level_idx < 0 or level_idx >= len(_CANONICAL_LEVEL_FORMS):
+        raise ValueError(
+            f"canonical marker only defined for levels 0..{len(_CANONICAL_LEVEL_FORMS) - 1}, got {level_idx}"
+        )
+    sequence, template, suffix = _CANONICAL_LEVEL_FORMS[level_idx]
+    return template.format(_format_token(sequence, counter)) + suffix
+
+
+def _scan_marker_matches(
+    text: str, source_levels: list[LevelSpec]
+) -> list[tuple[int, int, int]]:
+    raw: list[tuple[int, int, int]] = []
+    for level_idx, level in enumerate(source_levels):
+        for m in level.compiled_embedded.finditer(text):
+            raw.append((m.start(), m.end(), level_idx))
+    leading: tuple[int, int, int] | None = None
+    for level_idx, level in enumerate(source_levels):
+        m = level.compiled_leading.match(text)
+        if m and (leading is None or level_idx < leading[2]):
+            leading = (m.start(), m.end(), level_idx)
+    if leading is not None:
+        raw = [(s, e, lv) for (s, e, lv) in raw if s >= leading[1]]
+        raw.append(leading)
+    raw.sort(key=lambda x: (x[0], x[2]))
+    chosen: list[tuple[int, int, int]] = []
+    last_end = -1
+    for start, end, lv in raw:
+        if start < last_end:
+            continue
+        chosen.append((start, end, lv))
+        last_end = end
+    return chosen
+
+
+def _replace_in_paragraph(
+    p: etree._Element, replacements: list[tuple[int, int, str]]
+) -> None:
+    if not replacements:
+        return
+    pieces: list[tuple[etree._Element, str, str]] = []
+    for el in p.iter():
+        tag = el.tag
+        if tag == W + "t":
+            pieces.append((el, "t", el.text or ""))
+        elif tag == W + "tab":
+            pieces.append((el, "tab", " "))
+        elif tag in (W + "br", W + "cr"):
+            pieces.append((el, "br", " "))
+
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for _el, _kind, text in pieces:
+        spans.append((cursor, cursor + len(text)))
+        cursor += len(text)
+
+    edits: dict[int, list[tuple[int, int, str]]] = {}
+    for r_start, r_end, new_str in sorted(replacements):
+        wrote = False
+        for i, (s, e) in enumerate(spans):
+            if e <= r_start:
+                continue
+            if s >= r_end:
+                break
+            local_start = max(0, r_start - s)
+            local_end = min(e - s, r_end - s)
+            edits.setdefault(i, []).append((local_start, local_end, new_str if not wrote else ""))
+            wrote = True
+
+    for i, piece_edits in edits.items():
+        el, kind, text = pieces[i]
+        if kind != "t":
+            continue
+        piece_edits.sort(key=lambda x: x[0])
+        out = []
+        prev = 0
+        for local_start, local_end, repl in piece_edits:
+            out.append(text[prev:local_start])
+            out.append(repl)
+            prev = local_end
+        out.append(text[prev:])
+        el.text = "".join(out)
+
+
+def _rewrite_paragraph(
+    p: etree._Element, source_levels: list[LevelSpec], counters: list[int]
+) -> None:
+    text = paragraph_text(p)
+    matches = _scan_marker_matches(text, source_levels)
+    if not matches:
+        return
+    replacements: list[tuple[int, int, str]] = []
+    for start, end, level_idx in matches:
+        counters[level_idx] += 1
+        for j in range(level_idx + 1, len(counters)):
+            counters[j] = 0
+        canonical = _canonical_marker(level_idx, counters[level_idx])
+        is_leading = start == 0 or text[:start].strip() == ""
+        if is_leading:
+            replacement = text[:start] + canonical + " "
+            replacements.append((0, end, replacement))
+        else:
+            replacements.append((start, end, " " + canonical + " "))
+    _replace_in_paragraph(p, replacements)
+
+
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _apply_outline_normalizations(
+    doc_root: etree._Element, normalizations: list
+) -> None:
+    """Pre-pass: rewrite non-canonical markers to canonical for flagged sections.
+
+    Sections are located by Heading 2 pStyle (set by Rule 1) plus a
+    text match against `section_text`. The source-paragraph index that
+    `parts.resolve()` computed is intentionally NOT used — Rule 1 may
+    have removed paragraphs by the time this runs, so absolute indices
+    don't line up. The substring-uniqueness invariant from
+    `parts.resolve()` still guarantees a unique match here.
+    """
+    if not normalizations:
+        return
+    body = get_body(doc_root)
+    paragraphs = list(iter_paragraphs(body))
+    section_positions = [
+        i for i, p in enumerate(paragraphs)
+        if get_pstyle(p) == SECTION_STYLE_ID
+    ]
+    section_texts = {
+        i: _normalize_ws(paragraph_text(paragraphs[i]))
+        for i in section_positions
+    }
+    for norm in normalizations:
+        target = _normalize_ws(norm.section_text)
+        matches = [i for i in section_positions if target in section_texts[i]]
+        if len(matches) != 1:
+            raise ValueError(
+                f"outline normalization: section_text {norm.section_text!r} "
+                f"resolved to {len(matches)} Heading 2 paragraphs post-Rule 1; "
+                f"expected exactly 1"
+            )
+        sec_pos = matches[0]
+        next_pos = next(
+            (i for i in section_positions if i > sec_pos),
+            len(paragraphs),
+        )
+        counters = [0] * len(norm.source_levels)
+        for p in paragraphs[sec_pos + 1 : next_pos]:
+            _rewrite_paragraph(p, norm.source_levels, counters)
+
+
+# ---------------------------------------------------------------------
+# Phase 2: list detection and structure.
+# ---------------------------------------------------------------------
 
 
 # Indents per format.md §2 list ladder. Mirror the abstractNum ind values
@@ -349,25 +575,32 @@ def _install_abstract_num(numbering_root: etree._Element) -> None:
     numbering_root.append(_build_canonical_abstract_num())
 
 
-def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
+def apply(doc: Doc, parts: ResolvedParts) -> Doc:
     """Apply Rule 2 in place to the document and numbering trees.
 
-    Walks body paragraphs once. For each:
+    Two phases:
+      1. Outline marker normalization (pre-pass) — rewrite source
+         markers in flagged sections to the canonical ladder.
+      2. List detection — walk body paragraphs, detect leading list
+         markers, attach numPr/ilvl, install the canonical multilevel
+         numbering definition.
+
+    Phase 2 walks body paragraphs once. For each:
       - On a section heading (Heading 2): allocate a fresh <w:num>; reset
         marker-disambiguation state. Subsequent list items in this
         section reference the new num so counters restart at 1 per spec.
-      - On a list-marker paragraph: split off any embedded markers as
-        their own paragraphs, excise the leading marker text, attach
-        numPr, drop paragraph-level ind overrides.
+      - On a list-marker paragraph: excise the leading marker text,
+        attach numPr, drop paragraph-level ind overrides.
       - On a body continuation of a list item: indent it to match the
         parent item's body-text column (no marker rendered).
 
     The numbering tree is wiped of pre-existing abstractNum/num entries
     and gets one canonical abstractNum + one num per section installed.
     """
-    _install_abstract_num(numbering_root)
+    _apply_outline_normalizations(doc.document, parts.outline_normalizations)
+    _install_abstract_num(doc.numbering)
 
-    body = get_body(doc_root)
+    body = get_body(doc.document)
     last_alpha_l2: str | None = None
     last_alpha_l4: str | None = None
     last_level: int = -1
@@ -375,7 +608,7 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
     # numId allocation. CANONICAL_NUM_ID is the first; bump per section.
     next_num_id = CANONICAL_NUM_ID
     current_num_id = next_num_id
-    numbering_root.append(_build_num(current_num_id))
+    doc.numbering.append(_build_num(current_num_id))
     next_num_id += 1
 
     # Track the indent level of the current list item so a body paragraph
@@ -391,7 +624,7 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
             last_level = -1
             current_item_indent = None
             current_num_id = next_num_id
-            numbering_root.append(_build_num(current_num_id))
+            doc.numbering.append(_build_num(current_num_id))
             next_num_id += 1
             p = _next_paragraph_in_tree(p)
             continue
@@ -453,6 +686,8 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
         last_level = leading.level
 
         p = _next_paragraph_in_tree(p)
+
+    return doc
 
 
 def _extract_token(text: str, marker: _MarkerMatch) -> str | None:

@@ -10,51 +10,20 @@ These insurance-policy documents usually contain:
 - a title
 - a notices block
 - section headings
-- subheadings
-- coverage headings or insuring-agreement headings
+- subheadings (including coverage and insuring-agreement headings)
 - body text
 - legal list items
+- ignored content (paragraphs that exist in the source but should not
+  appear in the output — typically running-header content baked into
+  the body, or duplicated title fragments)
+
+<!-- the section on coverage etc. should probably not go here? or go under an appendix? -->
 
 Coverage and insuring-agreement headings do not need to appear in a
 fixed sequence. For example, a document may contain only `Coverage B`
 without also containing `Coverage A` or `Coverage C`.
 
-## Rule 0: Outline normalization (pre-pass)
-
-Some source documents use non-canonical outline markers — for example,
-uppercase Roman numerals at the top level of a section:
-
-```
-I. Foo
-  1) bar
-  2) baz
-II. Qux
-```
-
-Rule 0 rewrites such outlines to the canonical sequence
-(`A.` -> `1.` -> `a.` -> `1.` -> `a.` -> `i.`). The example above
-becomes:
-
-```
-A. Foo
-  1. bar
-  2. baz
-B. Qux
-```
-
-The rewrite is content-level, not styling. After Rule 0 finishes, the
-document looks as if it had been authored in canonical form, so
-Rules 1/2/3 see only canonical markers and stay commutative with each
-other.
-
-Rule 0 only fires for sections that are explicitly flagged as needing
-normalization. The flagging mechanism, target-section identification,
-and source-marker description live in the skill's manifest (see
-`SKILL.md`), not here.
-
-Script:
-
-- `rule_0.py`
+Ignored paragraphs are removed from the output entirely.
 
 ## Rule 1: Text hierarchy
 
@@ -110,6 +79,9 @@ Notices block styling:
 - `10pt` space after
 - a hard page break is appended inside the LAST paragraph in the
   block, so the body of the policy starts on a fresh page
+- if the source happens to follow the notices block with its own
+  empty page-break paragraph(s), those redundant breaks are stripped
+  so the output renders one page break, not two (no blank pages)
 
 The notices block sits between the title and the first section heading
 and typically contains a regulatory disclosure paragraph (e.g., a
@@ -158,10 +130,13 @@ Body text styling:
 - left-aligned
 - `10pt` space after
 
+<!-- this section below is a bit too level - e.g. on ooxml doc-default. this should just go into the skill -->
 Body styling is also installed at the OOXML doc-default level
 (`<w:docDefaults><w:rPrDefault>`) so anything that doesn't override —
 notably the list markers, whose canonical level definitions omit
 run formatting — inherits Inter / 11pt / black.
+
+<!-- this (the reference to the script) can probably go entirely in the skill.md -->
 
 Script:
 
@@ -170,6 +145,55 @@ Script:
 ## Rule 2: Lists
 
 List content should appear as a native multilevel list.
+
+### Outline marker normalization (pre-pass)
+
+Some source documents use non-canonical outline markers — for example,
+uppercase Roman numerals at the top level of a section:
+
+```
+I. Foo
+  1) bar
+  2) baz
+II. Qux
+```
+
+These are rewritten to the canonical sequence below
+(`A.` -> `1.` -> `a.` -> `1.` -> `a.` -> `i.`). The example above
+becomes:
+
+```
+A. Foo
+  1. bar
+  2. baz
+B. Qux
+```
+
+The rewrite is content-level, not styling: after it finishes, the
+document looks as if it had been authored in canonical form, so the
+list-detection logic below sees only canonical markers.
+
+Normalization only fires for sections that are explicitly flagged as
+needing it. The flagging mechanism, target-section identification, and
+source-marker description live in the skill's manifest (see
+`SKILL.md`), not here.
+
+Rewrite semantics:
+
+- The rewrite range is from the named section heading up to (but
+  excluding) the next section heading.
+- Counters are tracked per outline level. When a marker fires at
+  level `k`, the counters for all levels deeper than `k` reset to 0,
+  so e.g. a new `A.` resets the `1.` and `a.` counters under it.
+- Both the **leading** marker of a paragraph AND any **embedded**
+  markers inside it are rewritten. So an inline
+  `1) X ... or 2) Y` inside an A-level item becomes `a) X ... or b) Y`
+  in the canonical form.
+- Embedded scans use a non-word-boundary guard so citations and
+  parentheticals are not falsely matched. `Section IV.A.`,
+  `officer(s)`, `§4958(c)`, and `sixty (60) days` stay as plain text.
+
+### Marker sequence and recognition
 
 Marker sequence (canonical):
 
@@ -198,7 +222,28 @@ corresponding level):
 A marker at the top three levels may end in either a closing
 parenthesis `)` or a period `.`. Both forms mean the same thing. The
 parenthesized forms (`(1)`, `(a)`, `(i)`) are matched only with
-parentheses on both sides.
+parentheses on both sides, and only when they appear at the leading
+position of a paragraph — never embedded mid-sentence — to avoid
+false matches against citations like `Section 4958(a)(2)` or
+`paragraph (b) below`.
+
+Marker disambiguation (because L1/L3 share `decimal` and L2/L4 share
+`lower-alpha`):
+
+- A bare decimal (`1.`/`1)`) is L1 by default, and L3 if the most
+  recently emitted list item was at level ≥ 2.
+- A bare lower-alpha (`a.`/`a)`) is L2 by default, and L4 if the
+  most recently emitted list item was at level ≥ 3.
+- A single-letter `i`, `v`, or `x` is ambiguous between alpha and
+  roman. It is treated as roman (L5) by default, unless the alpha
+  sequence at L2 or L4 just emitted that letter's predecessor
+  (`h→i`, `u→v`, `w→x`), in which case it continues that alpha
+  sequence at the corresponding level.
+- Multi-character roman tokens (`ii`, `iii`, `iv`, …) are
+  unambiguously roman and always L5.
+
+The disambiguation state — last emitted alpha at L2/L4 and last
+emitted level — resets at every heading boundary (Heading 1, 2, or 3).
 
 For example, all of these are recognized as the same kind of list item:
 
@@ -223,7 +268,10 @@ space (or a tab to be normalized to a space). Citations like
 because the `(s)`, `(c)`, and `(a)` are not in leading position.
 
 If a paragraph continues a list item, it should stay attached to that
-list item.
+list item. Continuation behavior persists across consecutive unmarked
+paragraphs: every body paragraph that follows a list item, until a
+new list marker or heading appears, is indented to that item's
+body-text column.
 
 ```
 SECTION II: INSURING AGREEMENTS
@@ -277,6 +325,16 @@ List markers inherit their formatting from the paragraph's body style
 overrides on level entries; future body-style changes carry the markers
 along.
 
+Source documents that already contain native Word multilevel lists
+(`<w:numPr>` on the paragraph) are honored: the existing level (`ilvl`)
+is preserved as-is, marker text in the paragraph runs is not re-detected,
+but the list is rebound to the canonical numbering definition and any
+paragraph-level indent override is removed. So a document authored
+directly in Word with a real multilevel list keeps its structure, and
+inherits canonical look from the canonical list definition.
+
+<!-- this (the reference to the script) can probably go entirely in the skill.md -->
+
 Script:
 
 - `rule_2.py`
@@ -290,6 +348,7 @@ Every section should use:
 - left margin `1.0"`
 - right margin `1.0"`
 - header distance `0.5"`
+- footer distance `0.5"`
 
 The running header should be:
 
@@ -300,7 +359,9 @@ Example:
 - `Commercial General Liability Policy<TAB>CORGI-TECH-1234`
 
 If only one of these values is available, the header should still use
-the available value.
+the available value (no tab in that case). If neither is available, the
+header is an empty paragraph (still styled per the rules below, just
+with no text).
 
 The header paragraph should be:
 
@@ -310,11 +371,15 @@ The header paragraph should be:
 - `10pt`
 - gray text (`RGB 128,128,128`)
 
+<!-- this (the reference to the script) can probably go entirely in the skill.md -->
+
 Script:
 
 - `rule_3.py`
 
 ## Full Formatter
+
+<!-- this can probbaly go entirely in the skill.md -->
 
 The full formatter is the composition of:
 

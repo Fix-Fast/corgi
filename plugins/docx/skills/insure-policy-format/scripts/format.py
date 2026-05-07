@@ -7,10 +7,10 @@
 # ///
 """Corgi insurance-policy DOCX formatter — CLI orchestrator.
 
-Reads the source DOCX as raw OOXML (no pandoc), applies the four rules
-defined in format.md in numerical order (0 -> 1 -> 2 -> 3), and writes
-the result. Each rule mutates the in-memory XML trees; this module
-handles the docx zip I/O and orchestration.
+Reads the source DOCX as raw OOXML (no pandoc), applies the three rules
+defined in format.md in numerical order (1 -> 2 -> 3), and writes the
+result. Each rule mutates the in-memory XML trees; this module handles
+the docx zip I/O and orchestration.
 
 Usage:
     uv run format.py <input.docx> -o <output.docx> --parts-in <parts.json>
@@ -25,10 +25,10 @@ from pathlib import Path
 
 from lxml import etree
 
-import rule_0
 import rule_1
 import rule_2
 import rule_3
+from _docx import Doc
 from parts import resolve
 
 
@@ -107,20 +107,21 @@ def format_docx(source: Path, output: Path, parts_path: Path) -> None:
     else:
         styles_root = etree.Element(W + "styles", nsmap={"w": W_NS})
 
-    # Apply the rules in numerical order. Each rule is a pure (tree, parts)
-    # -> tree transformation; downstream rules read upstream effects from
-    # the tree itself (e.g. Rule 2 reads pStyle on paragraphs to skip
-    # headings styled by Rule 1).
-    rule_0.apply(doc_root, resolved)
-    rule_1.apply(doc_root, resolved, styles_root)
-    rule_2.apply(doc_root, numbering_root)
-    _, header_bytes = rule_3.apply(doc_root, resolved)
+    # Apply the rules in numerical order. Each rule has signature
+    # `(doc: Doc, parts: ResolvedParts) -> Doc` and mutates whichever
+    # trees on `doc` it cares about. Downstream rules read upstream
+    # effects from the trees themselves (e.g. Rule 2 reads pStyle on
+    # paragraphs to skip headings styled by Rule 1).
+    doc = Doc(document=doc_root, numbering=numbering_root, styles=styles_root)
+    doc = rule_1.apply(doc, resolved)
+    doc = rule_2.apply(doc, resolved)
+    doc = rule_3.apply(doc, resolved)
 
     # Reassemble the docx.
-    members["word/document.xml"] = _serialize_tree(doc_root)
-    members["word/numbering.xml"] = _serialize_tree(numbering_root)
-    members["word/styles.xml"] = _serialize_tree(styles_root)
-    members[HEADER_PART] = header_bytes
+    members["word/document.xml"] = _serialize_tree(doc.document)
+    members["word/numbering.xml"] = _serialize_tree(doc.numbering)
+    members["word/styles.xml"] = _serialize_tree(doc.styles)
+    members[HEADER_PART] = _serialize_tree(doc.header) if doc.header is not None else b""
     members[HEADER_RELS_PART] = _build_header_rels()
     if "word/_rels/document.xml.rels" in members:
         members["word/_rels/document.xml.rels"] = _ensure_relationship(

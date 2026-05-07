@@ -20,6 +20,7 @@ from __future__ import annotations
 from lxml import etree
 
 from _docx import (
+    Doc,
     RunFormat,
     append_page_break,
     apply_run_format_to_all,
@@ -106,16 +107,12 @@ def _inject_section_style_def(styles_root: etree._Element) -> None:
     )
 
 
-def apply(
-    doc_root: etree._Element,
-    parts: ResolvedParts,
-    styles_root: etree._Element,
-) -> etree._Element:
-    """Apply Rule 1 in place. Mutates doc_root and styles_root, returns doc_root."""
-    _inject_doc_defaults(styles_root)
-    _inject_section_style_def(styles_root)
+def apply(doc: Doc, parts: ResolvedParts) -> Doc:
+    """Apply Rule 1 in place. Mutates doc.document and doc.styles."""
+    _inject_doc_defaults(doc.styles)
+    _inject_section_style_def(doc.styles)
 
-    body = get_body(doc_root)
+    body = get_body(doc.document)
     paragraphs = list(iter_paragraphs(body))
 
     # Drop ignored paragraphs first so subsequent indices still match —
@@ -172,4 +169,4 @@ def apply(
                 clear_indent=False,
             )
 
-    return doc_root
+    return doc

@@ -16,6 +16,7 @@ from __future__ import annotations
 from lxml import etree
 
 from _docx import (
+    Doc,
     NSMAP,
     RunFormat,
     W,
@@ -64,8 +65,8 @@ def _replace_header_reference(sectPr: etree._Element, rel_id: str) -> None:
     sectPr.insert(0, href)
 
 
-def _build_header_part(header_title: str | None, policy_code: str | None) -> bytes:
-    """Build a complete word/header_corgi.xml document for the running header."""
+def _build_header_part(header_title: str | None, policy_code: str | None) -> etree._Element:
+    """Build the root <w:hdr> element for the running header."""
     nsmap = {
         "w": NSMAP["w"],
         "xml": "http://www.w3.org/XML/1998/namespace",
@@ -93,9 +94,7 @@ def _build_header_part(header_title: str | None, policy_code: str | None) -> byt
         _add_run(p, code)
     # else: empty header paragraph (still valid).
 
-    return etree.tostring(
-        hdr, xml_declaration=True, encoding="UTF-8", standalone=True,
-    )
+    return hdr
 
 
 def _add_run(p: etree._Element, text: str) -> None:
@@ -112,15 +111,15 @@ def _add_tab(p: etree._Element) -> None:
     etree.SubElement(r, W + "tab")
 
 
-def apply(doc_root: etree._Element, parts: ResolvedParts) -> tuple[etree._Element, bytes]:
-    """Apply Rule 3 in place. Returns (mutated doc_root, header_xml_bytes).
+def apply(doc: Doc, parts: ResolvedParts) -> Doc:
+    """Apply Rule 3 in place. Mutates doc.document and sets doc.header.
 
-    The caller is responsible for installing header_xml_bytes into the
-    docx zip at word/header_corgi.xml and updating the relationships /
+    The caller is responsible for serializing doc.header into the docx
+    zip at word/header_corgi.xml and updating the relationships /
     content-types parts (those live outside this rule's purview because
     they cross the in-memory tree boundary).
     """
-    body = doc_root.find(W + "body")
+    body = doc.document.find(W + "body")
     if body is None:
         raise ValueError("document.xml has no <w:body>")
     sectPr = body.find(W + "sectPr")
@@ -130,5 +129,5 @@ def apply(doc_root: etree._Element, parts: ResolvedParts) -> tuple[etree._Elemen
     _set_section_geometry(sectPr)
     _replace_header_reference(sectPr, HEADER_REL_ID)
 
-    header_bytes = _build_header_part(parts.header_title_text, parts.policy_code)
-    return doc_root, header_bytes
+    doc.header = _build_header_part(parts.header_title_text, parts.policy_code)
+    return doc
