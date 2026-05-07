@@ -56,6 +56,7 @@ class ResolvedParts:
     title_indices: set[int] = field(default_factory=set)
     section_indices: set[int] = field(default_factory=set)
     subheading_indices: set[int] = field(default_factory=set)
+    notices_block_indices: set[int] = field(default_factory=set)
     outline_normalizations: list[OutlineNormalization] = field(default_factory=list)
     header_title_text: str | None = None
     policy_code: str | None = None
@@ -235,6 +236,7 @@ def resolve(parts_path: Path, doc_root: etree._Element) -> ResolvedParts:
         title_indices=resolve_list("title_texts"),
         section_indices=resolve_list("section_heading_texts"),
         subheading_indices=resolve_list("subheading_texts"),
+        notices_block_indices=resolve_list("notices_block_texts"),
         header_title_text=raw.get("header_title_text"),
         policy_code=raw.get("policy_code"),
     )

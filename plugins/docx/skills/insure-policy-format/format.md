@@ -8,6 +8,7 @@ These insurance-policy documents usually contain:
 
 - a running header
 - a title
+- a notices block
 - section headings
 - subheadings
 - coverage headings or insuring-agreement headings
@@ -60,6 +61,7 @@ Script:
 The document should have a clear text hierarchy:
 
 - title
+- notices block
 - section heading
 - subheading
 - coverage heading or insuring-agreement heading
@@ -97,6 +99,48 @@ The section heading formatting is carried by the `Heading 2` style
 definition in `styles.xml`, not by run-level character overrides. Rule 1
 injects/overwrites the `Heading 2` style def to match these values and
 leaves the runs themselves bare.
+
+Notices block styling:
+
+- `Inter` (inherits from doc defaults)
+- `13pt`
+- bold
+- black text
+- left-aligned
+- `10pt` space after
+- a hard page break is appended inside the LAST paragraph in the
+  block, so the body of the policy starts on a fresh page
+
+The notices block sits between the title and the first section heading
+and typically contains a regulatory disclosure paragraph (e.g., a
+risk-retention-group notice) plus the coverage-form-type paragraph
+(e.g., `THIS IS A "CLAIMS-MADE" LIABILITY COVERAGE FORM...` or
+`THIS IS AN OCCURRENCE-BASED LIABILITY COVERAGE FORM...`).
+
+The `NOTICES:` or `IMPORTANT NOTICE:` subheading itself is styled per
+the subheading rules below; this rule covers only the prose paragraphs
+that follow it.
+
+Example (Directors & Officers Liability):
+
+```
+IMPORTANT NOTICE:
+
+This Policy is issued by a Risk Retention Group (RRG). A Risk
+Retention Group is a state-chartered insurance company that
+enjoys certain federal preemptions under the Liability Risk
+Retention Act (15 U.S.C. §3901 et seq.). As such, it is not
+subject to all the insurance laws and regulations of your state.
+
+THIS IS A "CLAIMS-MADE" LIABILITY COVERAGE FORM. This Policy
+provides coverage for Claims first made against an Insured
+during the Policy Period (or any applicable Extended Reporting
+Period). Defense Costs reduce the Limit of Liability (unless
+otherwise stated) and may be applied against the Retention.
+Please read the entire Policy carefully.
+
+───── page break ─────
+```
 
 Subheading styling:
 

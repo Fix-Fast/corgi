@@ -432,6 +432,85 @@ def remove_paragraph(p: etree._Element) -> None:
         parent.remove(p)
 
 
+def _strip_page_break_runs(p: etree._Element) -> None:
+    """Remove every <w:r> child whose only meaningful content is a <w:br w:type="page"/>."""
+    for r in list(p.findall(W + "r")):
+        # A run is page-break-only if it has no <w:t> and at least one page-break <w:br>.
+        has_text = any(child.tag == W + "t" for child in r)
+        if has_text:
+            continue
+        page_breaks = [c for c in r if c.tag == W + "br" and c.get(W + "type") == "page"]
+        if not page_breaks:
+            continue
+        for br in page_breaks:
+            r.remove(br)
+        # If the run is now empty (or only has rPr), drop it entirely.
+        meaningful = [c for c in r if c.tag != W + "rPr"]
+        if not meaningful:
+            p.remove(r)
+
+
+def strip_following_redundant_page_breaks(p: etree._Element) -> None:
+    """Walk forward from p over empty paragraphs and remove any that exist
+    only as page-break carriers.
+
+    Used after append_page_break to neutralize the source's own
+    page-break artifacts that would otherwise stack with ours. The
+    artifacts come in two shapes: (a) an empty paragraph whose only
+    content is a `<w:br w:type="page"/>` run, and (b) the same plus a
+    heading style whose default spacing pads the top of the next page.
+    Both forms get removed entirely (paragraph and all). Empty
+    paragraphs that contain other content (bookmarks aside) are left in
+    place. Stops at the first non-empty paragraph.
+    """
+    parent = p.getparent()
+    if parent is None:
+        return
+    siblings = list(parent)
+    try:
+        idx = siblings.index(p)
+    except ValueError:
+        return
+    for sibling in siblings[idx + 1:]:
+        if sibling.tag != W + "p":
+            break
+        if paragraph_text(sibling).strip():
+            break
+        _strip_page_break_runs(sibling)
+        # If the paragraph is now empty of runs, drop it. Bookmarks and
+        # other zero-width metadata don't justify a paragraph slot at the
+        # top of a fresh page.
+        if sibling.find(W + "r") is None:
+            parent.remove(sibling)
+
+
+def append_page_break(p: etree._Element) -> None:
+    """Append a <w:r><w:br w:type="page"/></w:r> as the final child of p.
+
+    Renders as a hard page break immediately after the paragraph's existing
+    content, which is how the user reference encodes "page break after this
+    paragraph." Idempotent: if the paragraph already ends with a page-break
+    run, leaves it in place but strips any rPr that prior run-formatting
+    passes may have stamped onto it (the page-break run has no visible
+    text, so its formatting is irrelevant — keeping it bare keeps the
+    serialized output stable across repeated formatter runs).
+    """
+    last_run = None
+    for r in p.findall(W + "r"):
+        last_run = r
+    if last_run is not None:
+        for child in last_run:
+            if child.tag == W + "br" and child.get(W + "type") == "page":
+                rPr = last_run.find(W + "rPr")
+                if rPr is not None:
+                    last_run.remove(rPr)
+                return
+    r = make_element("r")
+    br = make_element("br", {"type": "page"})
+    r.append(br)
+    p.append(r)
+
+
 def insert_after(reference: etree._Element, new: etree._Element) -> None:
     parent = reference.getparent()
     if parent is None:

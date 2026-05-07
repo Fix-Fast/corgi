@@ -21,6 +21,7 @@ from lxml import etree
 
 from _docx import (
     RunFormat,
+    append_page_break,
     apply_run_format_to_all,
     clear_pPr_child,
     clear_run_format_overrides,
@@ -30,6 +31,7 @@ from _docx import (
     set_alignment,
     set_pstyle,
     set_spacing,
+    strip_following_redundant_page_breaks,
     upsert_doc_default_run_format,
     upsert_paragraph_style,
 )
@@ -46,6 +48,7 @@ _TITLE_FMT = RunFormat(font="Bricolage Grotesque ExtraBold", size_pt=23, bold=Fa
 _SECTION_FMT = RunFormat(font="Bricolage Grotesque", size_pt=14, bold=True, color_hex="000000")
 _SUBHEAD_FMT = RunFormat(font="Bricolage Grotesque", size_pt=13, bold=True, color_hex="000000")
 _BODY_FMT = RunFormat(font="Inter", size_pt=11, color_hex="000000")
+_NOTICES_FMT = RunFormat(font="Inter", size_pt=13, bold=True, color_hex="000000")
 
 
 def _style_paragraph(
@@ -121,6 +124,10 @@ def apply(
     for idx in sorted(parts.ignored_indices, reverse=True):
         remove_paragraph(paragraphs[idx])
 
+    # Identify the last notices-block paragraph by document order so we
+    # can append a hard page break inside it (per format.md §1).
+    last_notice_idx = max(parts.notices_block_indices) if parts.notices_block_indices else None
+
     for idx, p in enumerate(paragraphs):
         if idx in parts.ignored_indices:
             continue
@@ -144,6 +151,18 @@ def apply(
                 alignment="left", space_before_pt=None, space_after_pt=10,
                 clear_indent=True,
             )
+        elif idx in parts.notices_block_indices:
+            _style_paragraph(
+                p, style_id=BODY_STYLE_ID, fmt=_NOTICES_FMT,
+                alignment="left", space_before_pt=None, space_after_pt=10,
+                clear_indent=True,
+            )
+            if idx == last_notice_idx:
+                append_page_break(p)
+                # Source docs often carry their own empty page-break
+                # paragraph after a notices block; remove its redundant
+                # break so we don't render a blank page.
+                strip_following_redundant_page_breaks(p)
         else:
             # Body paragraphs keep their indent — Rule 2 owns indent on
             # list items and continuation paragraphs.
