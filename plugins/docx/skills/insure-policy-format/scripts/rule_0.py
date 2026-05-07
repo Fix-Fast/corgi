@@ -3,7 +3,7 @@
 Per format.md §0:
 
     Rule 0 rewrites such outlines to the canonical sequence
-    (1) -> a) -> i) -> (1) -> (a) -> (i)). [...] The rewrite is
+    (A. -> 1. -> a. -> 1. -> a. -> i.). [...] The rewrite is
     content-level, not styling. After Rule 0 finishes, the document
     looks as if it had been authored in canonical form, so Rules 1/2/3
     see only canonical markers and stay commutative with each other.
@@ -23,12 +23,12 @@ from parts import LevelSpec, ResolvedParts
 
 
 _CANONICAL_LEVEL_FORMS: tuple[tuple[str, str, str], ...] = (
-    ("decimal", "{}", ")"),
-    ("lower_alpha", "{}", ")"),
-    ("lower_roman", "{}", ")"),
-    ("decimal", "({})", ""),
-    ("lower_alpha", "({})", ""),
-    ("lower_roman", "({})", ""),
+    ("upper_alpha", "{}", "."),
+    ("decimal", "{}", "."),
+    ("lower_alpha", "{}", "."),
+    ("decimal", "{}", "."),
+    ("lower_alpha", "{}", "."),
+    ("lower_roman", "{}", "."),
 )
 
 

@@ -2,8 +2,8 @@
 
 Per format.md §3:
 
-    Margins:    top 0.7"  bottom 0.7"  left 1.0"  right 1.0"
-    Header dist: 0.35"
+    Margins:    top 1.0"  bottom 1.0"  left 1.0"  right 1.0"
+    Header dist: 0.5"
     Header text: <Title><TAB><Policy Code>
     Header para: left-aligned, right-aligned tab stop at 6.3",
                  Inter, 10pt, gray RGB 128,128,128
@@ -41,11 +41,11 @@ def _set_section_geometry(sectPr: etree._Element) -> None:
     for el in sectPr.findall(W + "pgMar"):
         sectPr.remove(el)
     sectPr.append(make_element("pgMar", {
-        "top": str(inches_to_twips(0.7)),
-        "bottom": str(inches_to_twips(0.7)),
+        "top": str(inches_to_twips(1.0)),
+        "bottom": str(inches_to_twips(1.0)),
         "left": str(inches_to_twips(1.0)),
         "right": str(inches_to_twips(1.0)),
-        "header": str(inches_to_twips(0.35)),
+        "header": str(inches_to_twips(0.5)),
         "footer": str(inches_to_twips(0.5)),
         "gutter": "0",
     }))

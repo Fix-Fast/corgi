@@ -21,24 +21,24 @@ without also containing `Coverage A` or `Coverage C`.
 ## Rule 0: Outline normalization (pre-pass)
 
 Some source documents use non-canonical outline markers — for example,
-uppercase letters at the top level of a section:
+uppercase Roman numerals at the top level of a section:
 
 ```
-A. Foo
+I. Foo
   1) bar
   2) baz
-B. Qux
+II. Qux
 ```
 
 Rule 0 rewrites such outlines to the canonical sequence
-(`1)` -> `a)` -> `i)` -> `(1)` -> `(a)` -> `(i)`). The example above
+(`A.` -> `1.` -> `a.` -> `1.` -> `a.` -> `i.`). The example above
 becomes:
 
 ```
-1) Foo
-  a) bar
-  b) baz
-2) Qux
+A. Foo
+  1. bar
+  2. baz
+B. Qux
 ```
 
 The rewrite is content-level, not styling. After Rule 0 finishes, the
@@ -79,11 +79,10 @@ Running-header content should not be treated as body text.
 
 Title styling:
 
-- `Bricolage Grotesque`
-- `26pt`
-- bold
+- `Bricolage Grotesque ExtraBold` (the heavy-weight font face, not a regular face with the bold attribute)
+- `23pt`
 - centered
-- `18pt` space after
+- `10pt` space after
 
 Section heading styling:
 
@@ -94,14 +93,18 @@ Section heading styling:
 - `16pt` space before
 - `8pt` space after
 
+The section heading formatting is carried by the `Heading 2` style
+definition in `styles.xml`, not by run-level character overrides. Rule 1
+injects/overwrites the `Heading 2` style def to match these values and
+leaves the runs themselves bare.
+
 Subheading styling:
 
 - `Bricolage Grotesque`
-- `12pt`
+- `13pt`
 - bold
 - left-aligned
-- `10pt` space before
-- `6pt` space after
+- `10pt` space after
 
 Body text styling:
 
@@ -109,7 +112,12 @@ Body text styling:
 - `11pt`
 - black text
 - left-aligned
-- `6pt` space after
+- `10pt` space after
+
+Body styling is also installed at the OOXML doc-default level
+(`<w:docDefaults><w:rPrDefault>`) so anything that doesn't override —
+notably the list markers, whose canonical level definitions omit
+run formatting — inherits Inter / 11pt / black.
 
 Script:
 
@@ -119,14 +127,29 @@ Script:
 
 List content should appear as a native multilevel list.
 
-Marker sequence:
+Marker sequence (canonical):
 
-- `1)` or `1.`
-- `a)` or `a.`
-- `i)` or `i.`
-- `(1)`
-- `(a)`
-- `(i)`
+- `A.`
+- `1.`
+- `a.`
+- `1.`
+- `a.`
+- `i.`
+
+The ladder is period-delimited and cycles `decimal -> lowerLetter`
+between levels — list counters reset under their parent so two `1.`
+items at L1 and L3 don't conflict in practice.
+
+Recognized authoring forms (any of these typed as the leading marker
+on a paragraph become the canonical native list item at the
+corresponding level):
+
+- L0: `A.` or `A)`
+- L1: `1.` or `1)`
+- L2: `a.` or `a)`
+- L3: `1.` or `1)` or `(1)`
+- L4: `a.` or `a)` or `(a)`
+- L5: `i.` or `i)` or `(i)`
 
 A marker at the top three levels may end in either a closing
 parenthesis `)` or a period `.`. Both forms mean the same thing. The
@@ -135,10 +158,10 @@ parentheses on both sides.
 
 For example, all of these are recognized as the same kind of list item:
 
-- `1) Allocation: ...`
-- `1. Allocation: ...`
-- `a) Defense Costs: ...`
-- `a. Defense Costs: ...`
+- `A. Allocation: ...`
+- `A) Allocation: ...`
+- `1. Defense Costs: ...`
+- `1) Defense Costs: ...`
 
 If list content is still written as typed markers in plain text, it
 should be converted into a native list.
@@ -161,9 +184,9 @@ list item.
 ```
 SECTION II: INSURING AGREEMENTS
 
-1) Allocation: ...
+A. Allocation: ...
 
-   a) Defense Costs: The covered portion of Defense Costs incurred in
+   1. Defense Costs: The covered portion of Defense Costs incurred in
       defending a Demand will be considered covered Loss, ...
 
       Notwithstanding the foregoing, we may, at our discretion, allocate
@@ -175,17 +198,17 @@ not with the page margin or the marker column.
 
 List counters restart at every section heading (Heading 2). Two list
 items at the same level under different sections are numbered
-independently — `1)` under SECTION II is unrelated to `1)` under
+independently — `A.` under SECTION II is unrelated to `A.` under
 SECTION III.
 
 The list should use these level formats:
 
-- level 0: decimal with `)`
-- level 1: lower-alpha with `)`
-- level 2: lower-roman with `)`
-- level 3: decimal with surrounding parentheses
-- level 4: lower-alpha with surrounding parentheses
-- level 5: lower-roman with surrounding parentheses
+- level 0: upper-alpha with `.`
+- level 1: decimal with `.`
+- level 2: lower-alpha with `.`
+- level 3: decimal with `.`
+- level 4: lower-alpha with `.`
+- level 5: lower-roman with `.`
 
 The list should use this indentation ladder:
 
@@ -196,17 +219,19 @@ The list should use this indentation ladder:
 - level 4: left indent `3600 twips`, hanging indent `360 twips`
 - level 5: left indent `4320 twips`, hanging indent `360 twips`
 
-The space between the list marker and body text should be a single
-`space`, not a tab.
+The separator between the list marker and body text is a `tab` (the
+OOXML default — the canonical list definition omits `<w:suff>` so Word
+falls back to tab). The hanging indent ladder above places the tab stop
+at the body-text column so wrapped lines align under the first character
+of body text.
 
 Paragraph-level indentation overrides should be removed from list
 paragraphs.
 
-List markers should be:
-
-- `Inter`
-- `11pt`
-- black text
+List markers inherit their formatting from the paragraph's body style
+(Inter, 11pt, black). The canonical list definition emits no run-level
+overrides on level entries; future body-style changes carry the markers
+along.
 
 Script:
 
@@ -216,11 +241,11 @@ Script:
 
 Every section should use:
 
-- top margin `0.7"`
-- bottom margin `0.7"`
+- top margin `1.0"`
+- bottom margin `1.0"`
 - left margin `1.0"`
 - right margin `1.0"`
-- header distance `0.35"`
+- header distance `0.5"`
 
 The running header should be:
 

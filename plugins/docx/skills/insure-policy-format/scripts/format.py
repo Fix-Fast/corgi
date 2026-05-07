@@ -101,18 +101,25 @@ def format_docx(source: Path, output: Path, parts_path: Path) -> None:
     else:
         numbering_root = etree.Element(W + "numbering", nsmap={"w": W_NS})
 
+    # Styles tree: required by Rule 1 to upsert the Heading 2 style def.
+    if "word/styles.xml" in members:
+        styles_root = etree.fromstring(members["word/styles.xml"])
+    else:
+        styles_root = etree.Element(W + "styles", nsmap={"w": W_NS})
+
     # Apply the rules in numerical order. Each rule is a pure (tree, parts)
     # -> tree transformation; downstream rules read upstream effects from
     # the tree itself (e.g. Rule 2 reads pStyle on paragraphs to skip
     # headings styled by Rule 1).
     rule_0.apply(doc_root, resolved)
-    rule_1.apply(doc_root, resolved)
+    rule_1.apply(doc_root, resolved, styles_root)
     rule_2.apply(doc_root, numbering_root)
     _, header_bytes = rule_3.apply(doc_root, resolved)
 
     # Reassemble the docx.
     members["word/document.xml"] = _serialize_tree(doc_root)
     members["word/numbering.xml"] = _serialize_tree(numbering_root)
+    members["word/styles.xml"] = _serialize_tree(styles_root)
     members[HEADER_PART] = header_bytes
     members[HEADER_RELS_PART] = _build_header_rels()
     if "word/_rels/document.xml.rels" in members:

@@ -82,6 +82,7 @@ class _MarkerMatch:
 # behind. Both consume one trailing whitespace char so the marker text
 # can be cleanly excised.
 
+_BARE_UPPER_LETTER_RE = re.compile(r"([A-Z])\s*[).]")
 _PAREN_LETTER_RE = re.compile(r"\(([a-z])\)")
 _PAREN_ROMAN_RE = re.compile(r"\(([ivxlcdm]+)\)")
 _PAREN_DECIMAL_RE = re.compile(r"\((\d+)\)")
@@ -93,8 +94,29 @@ _BARE_ROMAN_RE = re.compile(r"([ivxlcdm]{2,})\s*[).]")  # 2+ chars: unambiguousl
 _ALPHA_PREDECESSOR_OF_ROMAN = {"i": "h", "v": "u", "x": "w"}
 
 
-def _detect_marker_at(text: str, start: int, *, is_leading: bool, last_l1: str | None, last_l4: str | None) -> tuple[int, int] | None:
+def _detect_marker_at(
+    text: str,
+    start: int,
+    *,
+    is_leading: bool,
+    last_alpha_l2: str | None,
+    last_alpha_l4: str | None,
+    last_level: int,
+) -> tuple[int, int] | None:
     """Look for a marker beginning at offset `start`. Returns (end_offset, level) or None.
+
+    Canonical ladder (post-Rule-0):
+        L0 upper-alpha  A.
+        L1 decimal      1.
+        L2 lower-alpha  a.
+        L3 decimal      1.   (also recognized as (1) for typed authoring)
+        L4 lower-alpha  a.   (also recognized as (a))
+        L5 lower-roman  i.   (also recognized as (i))
+
+    L1/L3 (and L2/L4) share numFmt; the level is disambiguated by
+    `last_level` — a decimal or alpha that follows a deeper level is
+    treated as the deeper variant. Roman vs alpha for single-letter
+    cases (i/v/x) is resolved via `last_alpha_l2`/`last_alpha_l4`.
 
     If is_leading=True, no boundary check is done (caller has already
     eaten leading whitespace). If is_leading=False, the caller has
@@ -108,9 +130,7 @@ def _detect_marker_at(text: str, start: int, *, is_leading: bool, last_l1: str |
     """
     rest = text[start:]
     if is_leading:
-        # Parenthesized: try decimal, then roman (multi-char + single roman with
-        # alpha-pred check), then letter. Putting roman before letter avoids
-        # misclassifying (i)/(v)/(x) — which match both — as alpha.
+        # Parenthesized authoring forms map to deep levels (L3-L5).
         m = _PAREN_DECIMAL_RE.match(rest)
         if m:
             return start + m.end(), 3
@@ -125,18 +145,23 @@ def _detect_marker_at(text: str, start: int, *, is_leading: bool, last_l1: str |
             # sequence just emitted the predecessor letter.
             if token in _ALPHA_PREDECESSOR_OF_ROMAN:
                 pred = _ALPHA_PREDECESSOR_OF_ROMAN[token]
-                if last_l4 != pred:
+                if last_alpha_l4 != pred:
                     return start + m.end(), 5
             return start + m.end(), 4
 
-    # Bare decimal: 1) or 1.
-    m = _BARE_DECIMAL_RE.match(rest)
+    # Bare upper-letter: A. or A) — only valid at L0.
+    m = _BARE_UPPER_LETTER_RE.match(rest)
     if m:
         return start + m.end(), 0
-    # Multi-char roman: ii)/iii)/iv)/etc — definitely roman.
+    # Bare decimal: 1) or 1.  L1 by default, L3 if we are nested deeper.
+    m = _BARE_DECIMAL_RE.match(rest)
+    if m:
+        level = 3 if last_level >= 2 else 1
+        return start + m.end(), level
+    # Multi-char roman: ii)/iii)/iv)/etc — definitely roman, L5.
     m = _BARE_ROMAN_RE.match(rest)
     if m:
-        return start + m.end(), 2
+        return start + m.end(), 5
     # Single letter (could be alpha or roman).
     m = _BARE_LETTER_RE.match(rest)
     if m:
@@ -144,18 +169,26 @@ def _detect_marker_at(text: str, start: int, *, is_leading: bool, last_l1: str |
         end = start + m.end()
         if token in _ALPHA_PREDECESSOR_OF_ROMAN:
             pred = _ALPHA_PREDECESSOR_OF_ROMAN[token]
-            # If we just emitted the alpha predecessor at L1, this is L1
-            # continuation; same logic at L4 (after the `(...)` predecessor).
-            if last_l1 == pred:
-                return end, 1
-            if last_l4 == pred:
+            # If we just emitted the alpha predecessor at L2 or L4,
+            # treat as alpha continuation at that level. Otherwise the
+            # token is the start of a roman sub-list (L5).
+            if last_alpha_l2 == pred:
+                return end, 2
+            if last_alpha_l4 == pred:
                 return end, 4
-            return end, 2  # default: start a new roman sub-list
-        return end, 1
+            return end, 5
+        # Plain alpha. L2 by default, L4 if nested under a decimal at L3.
+        level = 4 if last_level >= 3 else 2
+        return end, level
     return None
 
 
-def _scan_leading_marker(text: str, last_l1: str | None, last_l4: str | None) -> _MarkerMatch | None:
+def _scan_leading_marker(
+    text: str,
+    last_alpha_l2: str | None,
+    last_alpha_l4: str | None,
+    last_level: int,
+) -> _MarkerMatch | None:
     """Return the leading marker for the paragraph, or None.
 
     Embedded markers are intentionally NOT scanned. Per format.md §2,
@@ -170,7 +203,9 @@ def _scan_leading_marker(text: str, last_l1: str | None, last_l4: str | None) ->
     if pos >= len(text):
         return None
     result = _detect_marker_at(
-        text, pos, is_leading=True, last_l1=last_l1, last_l4=last_l4,
+        text, pos, is_leading=True,
+        last_alpha_l2=last_alpha_l2, last_alpha_l4=last_alpha_l4,
+        last_level=last_level,
     )
     if result is None:
         return None
@@ -251,37 +286,35 @@ def _build_canonical_abstract_num() -> etree._Element:
     *something* sensible if the spec ever drifts there).
     """
     spec = [
-        # (numFmt, lvlText, left_twips)
-        ("decimal",     "%1)",  720),
-        ("lowerLetter", "%2)",  1440),
-        ("lowerRoman",  "%3)",  2160),
-        ("decimal",     "(%4)", 2880),
-        ("lowerLetter", "(%5)", 3600),
-        ("lowerRoman",  "(%6)", 4320),
-        ("decimal",     "%7)",  5040),
-        ("lowerLetter", "%8)",  5760),
-        ("lowerRoman",  "%9)",  6480),
+        # (numFmt, lvlText, left_twips). Per format.md §2 canonical ladder:
+        # A. -> 1. -> a. -> 1. -> a. -> i.  (period-rooted, upper-letter at L0)
+        ("upperLetter", "%1.", 720),
+        ("decimal",     "%2.", 1440),
+        ("lowerLetter", "%3.", 2160),
+        ("decimal",     "%4.", 2880),
+        ("lowerLetter", "%5.", 3600),
+        ("lowerRoman",  "%6.", 4320),
+        # Levels 6-8 are placeholders — format.md doesn't license content
+        # beyond level 5; provide stable definitions so Word doesn't trip.
+        ("decimal",     "%7.", 5040),
+        ("lowerLetter", "%8.", 5760),
+        ("lowerRoman",  "%9.", 6480),
     ]
     abstract = make_element("abstractNum", {"abstractNumId": str(CANONICAL_ABSTRACT_NUM_ID)})
     abstract.append(make_element("multiLevelType", {"val": "multilevel"}))
     for ilvl, (fmt, ltext, left) in enumerate(spec):
+        # No <w:suff>: defaults to "tab" (matches the user reference's
+        # native lists). No <w:rPr>: marker formatting inherits from the
+        # paragraph's run style — body is Inter 11pt black, so markers
+        # render the same without explicit overrides.
         lvl = make_element("lvl", {"ilvl": str(ilvl)})
         lvl.append(make_element("start", {"val": "1"}))
         lvl.append(make_element("numFmt", {"val": fmt}))
-        lvl.append(make_element("suff", {"val": "space"}))
         lvl.append(make_element("lvlText", {"val": ltext}))
         lvl.append(make_element("lvlJc", {"val": "left"}))
         pPr = make_element("pPr")
         pPr.append(make_element("ind", {"left": str(left), "hanging": "360"}))
         lvl.append(pPr)
-        rPr = make_element("rPr")
-        rPr.append(make_element("rFonts", {
-            "ascii": "Inter", "hAnsi": "Inter", "cs": "Inter", "eastAsia": "Inter",
-        }))
-        rPr.append(make_element("color", {"val": "000000"}))
-        rPr.append(make_element("sz", {"val": "22"}))
-        rPr.append(make_element("szCs", {"val": "22"}))
-        lvl.append(rPr)
         abstract.append(lvl)
     return abstract
 
@@ -335,8 +368,9 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
     _install_abstract_num(numbering_root)
 
     body = get_body(doc_root)
-    last_l1: str | None = None
-    last_l4: str | None = None
+    last_alpha_l2: str | None = None
+    last_alpha_l4: str | None = None
+    last_level: int = -1
 
     # numId allocation. CANONICAL_NUM_ID is the first; bump per section.
     next_num_id = CANONICAL_NUM_ID
@@ -352,8 +386,9 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
     while p is not None:
         style = get_pstyle(p)
         if style == SECTION_STYLE_ID:
-            last_l1 = None
-            last_l4 = None
+            last_alpha_l2 = None
+            last_alpha_l4 = None
+            last_level = -1
             current_item_indent = None
             current_num_id = next_num_id
             numbering_root.append(_build_num(current_num_id))
@@ -362,30 +397,37 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
             continue
         if style in HEADING_STYLES:
             # Title or subheading: reset disambiguation but keep current num.
-            last_l1 = None
-            last_l4 = None
+            last_alpha_l2 = None
+            last_alpha_l4 = None
+            last_level = -1
             current_item_indent = None
             p = _next_paragraph_in_tree(p)
             continue
 
-        # If the paragraph already carries numPr (e.g. from a prior pass),
-        # treat it as a list item: read its ilvl and update the running
-        # continuation indent so following body paragraphs inherit it.
-        # Skip marker scanning — the marker text was already excised.
+        # If the paragraph already carries numPr (source-native multilevel
+        # list, or a prior-pass artifact), keep its ilvl but reassign numId
+        # to this section's canonical num — Rule 2 wiped every source
+        # abstractNum/num when it installed the canonical one, so leaving
+        # the source's numId in place would dangle. Also strip the source's
+        # paragraph-level ind override so canonical indentation applies.
         existing_numPr = p.find(W + "pPr")
         existing_numPr = existing_numPr.find(W + "numPr") if existing_numPr is not None else None
         if existing_numPr is not None:
             ilvl_el = existing_numPr.find(W + "ilvl")
+            ilvl = 0
             if ilvl_el is not None:
                 try:
-                    current_item_indent = _LEVEL_LEFT_INDENT.get(int(ilvl_el.get(W + "val", "0")))
+                    ilvl = int(ilvl_el.get(W + "val", "0"))
                 except ValueError:
-                    pass
+                    ilvl = 0
+            set_numPr(p, current_num_id, ilvl)
+            clear_pPr_child(p, "ind")
+            current_item_indent = _LEVEL_LEFT_INDENT.get(ilvl)
             p = _next_paragraph_in_tree(p)
             continue
 
         text = _paragraph_text(p)
-        leading = _scan_leading_marker(text, last_l1, last_l4)
+        leading = _scan_leading_marker(text, last_alpha_l2, last_alpha_l4, last_level)
         if leading is None:
             # Body paragraph with no marker. If it's immediately
             # following a list item, indent it to match (continuation).
@@ -399,14 +441,16 @@ def apply(doc_root: etree._Element, numbering_root: etree._Element) -> None:
         clear_pPr_child(p, "ind")
         current_item_indent = _LEVEL_LEFT_INDENT.get(leading.level)
         token = _extract_token(text, leading)
-        if leading.level == 1:
-            last_l1 = token
-            last_l4 = None
+        if leading.level == 2:
+            last_alpha_l2 = token
+            last_alpha_l4 = None
         elif leading.level == 4:
-            last_l4 = token
-        elif leading.level in (0, 3):
-            last_l1 = None
-            last_l4 = None
+            last_alpha_l4 = token
+        elif leading.level in (0, 1, 3):
+            # Hitting a parent or peer-of-parent resets the alpha trackers below.
+            last_alpha_l2 = None
+            last_alpha_l4 = None
+        last_level = leading.level
 
         p = _next_paragraph_in_tree(p)
 

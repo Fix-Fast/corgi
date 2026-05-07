@@ -247,11 +247,178 @@ def apply_run_format_to_all(p: etree._Element, fmt: RunFormat) -> None:
         apply_run_format(r, fmt)
 
 
+_RPR_FORMAT_TAGS = ("rFonts", "sz", "szCs", "b", "bCs", "color")
+
+
+def clear_run_format_overrides(p: etree._Element) -> None:
+    """Remove rFonts/sz/szCs/b/bCs/color from every run's <w:rPr>.
+
+    Used when a paragraph's appearance is carried by its style def
+    (e.g., a Heading 2 paragraph) and any run-level overrides would
+    win over the style def. Other rPr children (italic, language tags,
+    character styles, etc.) are left in place.
+    """
+    for r in iter_runs(p):
+        rPr = r.find(W + "rPr")
+        if rPr is None:
+            continue
+        for tag in _RPR_FORMAT_TAGS:
+            for el in rPr.findall(W + tag):
+                rPr.remove(el)
+
+
 def get_body(doc_root: etree._Element) -> etree._Element:
     body = doc_root.find(W + "body")
     if body is None:
         raise ValueError("document.xml has no <w:body>")
     return body
+
+
+def upsert_doc_default_run_format(styles_root: etree._Element, fmt: RunFormat) -> None:
+    """Upsert <w:docDefaults><w:rPrDefault><w:rPr>...</w:rPr></w:rPrDefault></w:docDefaults>.
+
+    The doc-default rPr is the bottom of the OOXML inheritance chain —
+    every run/paragraph/style/list-level inherits it unless it overrides.
+    Setting font/size/color here makes them globally apply (e.g. list
+    markers, which have no rPr on our canonical abstractNum levels,
+    render with this formatting).
+    """
+    docDefaults = styles_root.find(W + "docDefaults")
+    if docDefaults is None:
+        docDefaults = make_element("docDefaults")
+        styles_root.insert(0, docDefaults)
+    rPrDefault = docDefaults.find(W + "rPrDefault")
+    if rPrDefault is None:
+        rPrDefault = make_element("rPrDefault")
+        docDefaults.insert(0, rPrDefault)
+    rPr = rPrDefault.find(W + "rPr")
+    if rPr is None:
+        rPr = make_element("rPr")
+        rPrDefault.append(rPr)
+    # Replace the formatting fields we own; leave others (lang, etc.) alone.
+    if fmt.font is not None:
+        for el in rPr.findall(W + "rFonts"):
+            rPr.remove(el)
+        rPr.append(make_element("rFonts", {
+            "ascii": fmt.font, "hAnsi": fmt.font, "eastAsia": fmt.font, "cs": fmt.font,
+        }))
+    if fmt.size_pt is not None:
+        for tag in ("sz", "szCs"):
+            for el in rPr.findall(W + tag):
+                rPr.remove(el)
+        sz_val = str(pt_to_half_pt(fmt.size_pt))
+        rPr.append(make_element("sz", {"val": sz_val}))
+        rPr.append(make_element("szCs", {"val": sz_val}))
+    if fmt.color_hex is not None:
+        for el in rPr.findall(W + "color"):
+            rPr.remove(el)
+        rPr.append(make_element("color", {"val": fmt.color_hex}))
+
+
+def upsert_paragraph_style(
+    styles_root: etree._Element,
+    *,
+    style_id: str,
+    name: str,
+    based_on: str | None,
+    next_style: str | None,
+    fmt: RunFormat,
+    alignment: str | None,
+    space_before_pt: float | None,
+    space_after_pt: float | None,
+) -> None:
+    """Upsert a <w:style w:type="paragraph" w:styleId={style_id}> in styles.xml.
+
+    Replaces the style's <w:pPr> and <w:rPr> blocks with values derived
+    from the supplied formatting params; preserves the rest of the style
+    (basedOn, next, uiPriority, qFormat, etc.). If the style does not
+    exist, a new one is appended.
+    """
+    style_el = None
+    for s in styles_root.findall(W + "style"):
+        if s.get(W + "styleId") == style_id:
+            style_el = s
+            break
+    if style_el is None:
+        style_el = etree.SubElement(styles_root, W + "style")
+        style_el.set(W + "type", "paragraph")
+        style_el.set(W + "styleId", style_id)
+        # Required header children, in OOXML order.
+        name_el = etree.SubElement(style_el, W + "name")
+        name_el.set(W + "val", name)
+        if based_on is not None:
+            be = etree.SubElement(style_el, W + "basedOn")
+            be.set(W + "val", based_on)
+        if next_style is not None:
+            ne = etree.SubElement(style_el, W + "next")
+            ne.set(W + "val", next_style)
+        etree.SubElement(style_el, W + "qFormat")
+    else:
+        # Replace name/basedOn/next while keeping ordering hints already there.
+        existing_name = style_el.find(W + "name")
+        if existing_name is not None:
+            existing_name.set(W + "val", name)
+        elif name:
+            name_el = make_element("name", {"val": name})
+            style_el.insert(0, name_el)
+        if based_on is not None:
+            existing = style_el.find(W + "basedOn")
+            if existing is not None:
+                existing.set(W + "val", based_on)
+            else:
+                el = make_element("basedOn", {"val": based_on})
+                # Insert after <w:name>
+                anchor = style_el.find(W + "name")
+                idx = list(style_el).index(anchor) + 1 if anchor is not None else 0
+                style_el.insert(idx, el)
+        if next_style is not None:
+            existing = style_el.find(W + "next")
+            if existing is not None:
+                existing.set(W + "val", next_style)
+            else:
+                el = make_element("next", {"val": next_style})
+                anchor = style_el.find(W + "basedOn")
+                if anchor is None:
+                    anchor = style_el.find(W + "name")
+                idx = list(style_el).index(anchor) + 1 if anchor is not None else 0
+                style_el.insert(idx, el)
+
+    # Drop and rebuild pPr.
+    for old in style_el.findall(W + "pPr"):
+        style_el.remove(old)
+    pPr = make_element("pPr")
+    if space_before_pt is not None or space_after_pt is not None:
+        attrs: dict[str, str] = {}
+        if space_before_pt is not None:
+            attrs["before"] = str(pt_to_twips(space_before_pt))
+        if space_after_pt is not None:
+            attrs["after"] = str(pt_to_twips(space_after_pt))
+        pPr.append(make_element("spacing", attrs))
+    if alignment is not None:
+        pPr.append(make_element("jc", {"val": alignment}))
+    style_el.append(pPr)
+
+    # Drop and rebuild rPr.
+    for old in style_el.findall(W + "rPr"):
+        style_el.remove(old)
+    rPr = make_element("rPr")
+    if fmt.font is not None:
+        rPr.append(make_element("rFonts", {
+            "ascii": fmt.font,
+            "hAnsi": fmt.font,
+            "eastAsia": fmt.font,
+            "cs": fmt.font,
+        }))
+    if fmt.bold is True:
+        rPr.append(make_element("b"))
+        rPr.append(make_element("bCs"))
+    if fmt.color_hex is not None:
+        rPr.append(make_element("color", {"val": fmt.color_hex}))
+    if fmt.size_pt is not None:
+        sz_val = str(pt_to_half_pt(fmt.size_pt))
+        rPr.append(make_element("sz", {"val": sz_val}))
+        rPr.append(make_element("szCs", {"val": sz_val}))
+    style_el.append(rPr)
 
 
 def get_sectPr(body: etree._Element) -> etree._Element | None:
