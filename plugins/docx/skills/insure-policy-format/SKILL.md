@@ -199,17 +199,28 @@ In the example above:
 
 ## What the pipeline does
 
-1. `rule_0.py` (conditional): rewrite non-canonical outline markers
-   (e.g. `A./1)/a)`) to canonical (`1)/a)/i)`) within sections flagged
-   in `outline_normalizations`.
-2. `rule_1.py`: classify paragraphs into title / section heading /
-   subheading / body via parts.json indices and apply the corresponding
-   pStyle and run formatting.
-3. `rule_2.py`: detect list markers in body paragraphs, split paragraphs
-   on embedded markers, assign numPr at the correct level, and install a
-   single canonical multilevel numbering definition.
-4. `rule_3.py`: set page margins, install the running header part, and
-   wire it up via section properties.
+Each rule has the uniform signature `apply(doc: Doc, parts: ResolvedParts) -> Doc`,
+where `Doc` bundles the document/numbering/styles/header etree roots.
+`format.py` builds a `Doc` from the source `.docx` zip, threads it
+through the rules in order, then serializes the trees back out:
+
+1. `rule_1.py` — classify paragraphs into title / section heading /
+   subheading / notices block / body via parts.json indices, remove
+   ignored paragraphs, and apply the corresponding pStyle and run
+   formatting. Also installs body-level doc defaults and the Heading 2
+   style def.
+2. `rule_2.py` — two phases:
+   1. Outline marker normalization (conditional, runs only when
+      `outline_normalizations` is set): rewrite non-canonical source
+      markers (e.g. `I./A./1)`) to the canonical ladder
+      (`A./1./a./1./a./i.`) within flagged sections.
+   2. List detection: walk body paragraphs (skipping headings), detect
+      leading list markers, attach `numPr` at the correct level, and
+      install a single canonical multilevel numbering definition with
+      one `<w:num>` per section so list counters restart at every
+      Heading 2.
+3. `rule_3.py` — set page margins, build the running header (`<w:hdr>`
+   element on `Doc.header`), and wire up the section properties.
 
 Output is formatting-deterministic: for the same input DOCX, the
 formatter produces the same document structure and styling. Container
@@ -220,3 +231,65 @@ metadata such as `docProps/core.xml` timestamps may still vary by run.
 - The formatter does not infer title, section-heading, subheading, or
   running-header values on its own. Claude is expected to supply them
   via `--parts-in`.
+
+## Maintaining this skill
+
+`format.md` is the canonical spec of what the output should look like.
+The rule scripts are a materialized view of `format.md` — when the spec
+and a script disagree, the script is the bug. The golden tests in
+`tests/golden/` are the regression gate.
+
+### Spec → script index
+
+Use this map to find the script(s) affected by a `format.md` edit:
+
+| `format.md` section | Owning script |
+|---|---|
+| Document parts (input categories) | `scripts/parts.py` |
+| Rule 1 — Text hierarchy | `scripts/rule_1.py` |
+| Rule 2 — Lists (outline normalization, marker recognition, list structure) | `scripts/rule_2.py` |
+| Rule 3 — Running header and page layout | `scripts/rule_3.py` |
+
+Cross-cutting (rarely edited via `format.md` changes alone):
+- `scripts/_docx.py` — low-level OOXML helpers and the `Doc` bundle type
+- `scripts/format.py` — pipeline orchestration
+
+### The loop
+
+1. Edit `format.md`.
+2. Use the index above to find the affected script(s).
+3. Edit the script(s) to match.
+4. Run the goldens: `uv run tests/golden/test_formatter_golden.py`.
+   Add `--keep` to preserve produced `.docx` files in `/tmp/...` for
+   manual inspection.
+5. **If goldens pass**: the change had no observable effect on
+   cgl/seic_do — done. Commit `format.md` + script changes together.
+6. **If goldens fail**: do NOT silently regenerate. Surface the
+   divergence to the user so they can see what changed. Two good ways:
+   - Open the produced `.docx` (from `--keep`) in Word via the
+     `word-bridge` skill so the user can visually compare against the
+     prior golden in real Word rendering. This is the high-fidelity
+     path — visual review catches things that XML diffs gloss over.
+   - Summarize the canonical XML diff in plain language for the user
+     ("section headings are now 16pt instead of 14pt", etc.).
+
+   Then, **only after the user confirms intent**:
+   - If the diff matches the spec change → regenerate the golden as a
+     **separate, explicitly-labeled commit**
+     (`regenerate cgl golden: <one-liner reason>`). Never bundle
+     regeneration with the script change — the audit trail depends on
+     these being separable.
+   - If the diff doesn't match intent → fix the script, leave the
+     golden untouched.
+
+### When `format.md` introduces a new structural concept
+
+If a `format.md` change introduces a new *category* of document part
+(like `notices_block` was), the change spans more than one file:
+
+- `scripts/parts.py` — add the new field to the JSON schema and resolver
+- This `SKILL.md` — document the new field in the "Claude prompt
+  contract" section above
+- The relevant rule script — handle the new category
+
+Worth scanning all three when the spec gains a new concept.
