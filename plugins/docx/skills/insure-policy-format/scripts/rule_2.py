@@ -367,7 +367,7 @@ def _scan_leading_marker(text: str) -> _MarkerMatch | None:
     if level is None or end is None:
         return None
     consumed_end = end
-    if consumed_end < len(text) and text[consumed_end] == " ":
+    while consumed_end < len(text) and text[consumed_end] in (" ", "\t"):
         consumed_end += 1
     return _MarkerMatch(0, consumed_end, level, is_leading=True)
 
@@ -459,13 +459,17 @@ def _build_canonical_abstract_num() -> etree._Element:
     abstract = make_element("abstractNum", {"abstractNumId": str(CANONICAL_ABSTRACT_NUM_ID)})
     abstract.append(make_element("multiLevelType", {"val": "multilevel"}))
     for ilvl, (fmt, ltext, left) in enumerate(spec):
-        # No <w:suff>: defaults to "tab" (matches the user reference's
-        # native lists). No <w:rPr>: marker formatting inherits from the
-        # paragraph's run style — body is Inter 11pt black, so markers
-        # render the same without explicit overrides.
+        # <w:suff w:val="space"/>: render a single space between marker
+        # and body, matching the user reference's native lists. Default
+        # "tab" suffix renders inconsistently when marker glyph width
+        # straddles the body-indent position (e.g. Inter "BB."/"EE." in
+        # an upperLetter level, where the tab collapses for some letters
+        # but not others). No <w:rPr>: marker formatting inherits from
+        # the paragraph's run style.
         lvl = make_element("lvl", {"ilvl": str(ilvl)})
         lvl.append(make_element("start", {"val": "1"}))
         lvl.append(make_element("numFmt", {"val": fmt}))
+        lvl.append(make_element("suff", {"val": "space"}))
         lvl.append(make_element("lvlText", {"val": ltext}))
         lvl.append(make_element("lvlJc", {"val": "left"}))
         pPr = make_element("pPr")

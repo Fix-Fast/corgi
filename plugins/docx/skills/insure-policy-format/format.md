@@ -211,9 +211,10 @@ The list should use this indentation ladder:
 - level 4: left indent `3600 twips`, hanging indent `360 twips`
 - level 5: left indent `4320 twips`, hanging indent `360 twips`
 
-The separator between the list marker and body text is a tab. The
-hanging indent ladder above places the tab stop at the body-text
-column, so wrapped lines align under the first character of body text.
+The separator between the list marker and body text is a single space.
+The hanging indent ladder above places the body-text column at the
+left indent, so wrapped lines align under the first character of body
+text.
 
 Paragraph-level indentation overrides should be removed from list
 paragraphs.
