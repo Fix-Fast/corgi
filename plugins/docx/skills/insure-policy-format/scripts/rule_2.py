@@ -316,7 +316,7 @@ class _MarkerMatch:
 # inside parens that consists solely of roman digits is treated as L5,
 # so `(i)` always parses as L5 (never L4).
 
-_L0_RE = re.compile(r"([A-Z])\.")
+_L0_RE = re.compile(r"([A-Z]+)\.")
 _L1_RE = re.compile(r"(\d+)\.")
 _L2_RE = re.compile(r"([a-z])\.")
 _L3_RE = re.compile(r"\((\d+)\)")

@@ -272,6 +272,13 @@ def main() -> int:
         action="store_true",
         help="Keep produced files in /tmp for inspection.",
     )
+    parser.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="Overwrite each golden with the formatter's current output. "
+             "Use only when an intentional spec/script change has been "
+             "reviewed and the new output is the desired golden.",
+    )
     args = parser.parse_args()
 
     workdir = Path(tempfile.mkdtemp(prefix="formatter_golden_"))
@@ -282,6 +289,9 @@ def main() -> int:
         print(f"\n=== fixture: {fx.name} ===")
         produced_from_orig = workdir / f"{fx.name}_from_original.docx"
         run_formatter(fx.original, produced_from_orig, fx.parts)
+        if args.regenerate:
+            shutil.copyfile(produced_from_orig, fx.golden)
+            print(f"  REGENERATED: {fx.golden}")
         ok1 = assert_equal(
             f"{fx.name}: reproduces golden",
             produced_from_orig, fx.golden, args.max_diff_lines,

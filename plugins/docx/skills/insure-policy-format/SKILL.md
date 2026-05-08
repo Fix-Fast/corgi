@@ -44,13 +44,13 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/insure-policy-format/scripts/format.py" \
   --parts-in /abs/path/to/policy.parts.json
 ```
 
-The pipeline composes four pure rules (`(doc, parts) -> doc`) in
+The pipeline composes three pure rules (`(doc, parts) -> doc`) in
 numerical order, mutating the OOXML tree directly:
 
-- `rule_0.py` — outline marker normalization (pre-pass; only fires when
-  `outline_normalizations` is set)
 - `rule_1.py` — text hierarchy and body/heading styling
-- `rule_2.py` — list structure and list formatting
+- `rule_2.py` — outline marker normalization (pre-pass; only fires when
+  `outline_normalizations` is set) followed by list structure and list
+  formatting
 - `rule_3.py` — page layout and running header
 
 ## Claude prompt contract
@@ -285,11 +285,12 @@ Cross-cutting (rarely edited via `format.md` changes alone):
    text-only diff.
 
    Then, **only after the user confirms intent**:
-   - If the diff matches the spec change → regenerate the golden as a
-     **separate, explicitly-labeled commit**
-     (`regenerate cgl golden: <one-liner reason>`). Never bundle
-     regeneration with the script change — the audit trail depends on
-     these being separable.
+   - If the diff matches the spec change → regenerate the goldens with
+     `uv run tests/golden/test_formatter_golden.py --regenerate`, then
+     commit the regenerated `.docx` files as a **separate,
+     explicitly-labeled commit** (`regenerate cgl golden: <one-liner
+     reason>`). Never bundle regeneration with the script change — the
+     audit trail depends on these being separable.
    - If the diff doesn't match intent → fix the script, leave the
      golden untouched.
 
