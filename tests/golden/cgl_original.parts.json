@@ -42,14 +42,59 @@
   ],
   "subheading_texts": [
     "NOTICES:",
-    "Coverage A \u2014 Bodily Injury and Property Damage Liability",
-    "Coverage B \u2014 Personal and Advertising Injury Liability\nWe agree to pay Loss and Defense Costs an Insured must legal",
-    "Coverage C \u2014 Medical Expenses\nWe agree to pay Medical Expenses because of Bodily Injury ca"
+    "Coverage A — Bodily Injury and Property Damage Liability",
+    "Coverage B — Personal and Advertising Injury Liability\nWe agree to pay Loss and Defense Costs an Insured must legal",
+    "Coverage C — Medical Expenses\nWe agree to pay Medical Expenses because of Bodily Injury ca"
   ],
   "notices_block_texts": [
     "This policy is issued by a Risk Retention Group",
     "THIS IS AN OCCURRENCE-BASED LIABILITY COVERAGE FORM",
     "It provides coverage for Bodily Injury, Property Damage, and Personal and Advertising Injury"
+  ],
+  "outline_normalizations": [
+    {
+      "section_text": "SECTION I: POLICY TERMS AND CONDITIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION III: DEFINITIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION IV: LIMITATIONS OF LIABILITY AND RETENTIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"}
+      ]
+    },
+    {
+      "section_text": "SECTION V: EXCLUSIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"},
+        {"pattern": "\\(([ivx]+)\\)", "sequence": "lower_roman"}
+      ]
+    },
+    {
+      "section_text": "SECTION VI: DEFENSE AND SETTLEMENT",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"}
+      ]
+    },
+    {
+      "section_text": "SECTION VII: NOTICES AND CONDITIONS",
+      "source_levels": [
+        {"pattern": "(\\d+)\\)", "sequence": "decimal"},
+        {"pattern": "([a-z])\\)", "sequence": "lower_alpha"},
+        {"pattern": "\\((\\d+)\\)", "sequence": "decimal"}
+      ]
+    }
   ],
   "header_title_text": "Commercial General Liability Policy",
   "policy_code": "CORG-TECH-0100"

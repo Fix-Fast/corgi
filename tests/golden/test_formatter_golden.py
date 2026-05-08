@@ -118,11 +118,20 @@ def _sort_property_children(root: etree._Element) -> None:
 
 
 def _hash_element(el: etree._Element) -> str:
-    """Stable content hash for an OOXML element, ignoring its own ID-bearing attrs."""
+    """Stable content hash for an OOXML element, ignoring its own ID-bearing attrs.
+
+    Also strips the *inner* `<w:abstractNumId>` reference inside a `<w:num>`
+    so that a `<w:num>`'s hash depends only on its own structure (e.g.
+    lvlOverrides), not on which abstractNum it points at. Otherwise a
+    pure content change to the canonical abstractNum (e.g. updating
+    lvlText) would cascade into different numId hashes in document.xml.
+    """
     clone = etree.fromstring(etree.tostring(el))
     for attr in (f"{W}abstractNumId", f"{W}numId"):
         if attr in clone.attrib:
             del clone.attrib[attr]
+    for child in clone.findall(f"{W}abstractNumId"):
+        clone.remove(child)
     canonical = etree.tostring(clone, method="c14n2")
     return hashlib.sha1(canonical).hexdigest()[:12]
 

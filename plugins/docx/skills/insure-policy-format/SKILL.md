@@ -72,8 +72,9 @@ Before running the formatter:
 
 If the document already has explicit heading structure, use that.
 
-Do not assume coverage headings appear consecutively. For example, a
-document may contain only `Coverage B`.
+Coverage and insuring-agreement headings do not need to appear in a
+fixed sequence. For example, a document may contain only `Coverage B`
+without also containing `Coverage A` or `Coverage C`.
 
 Each `*_texts` entry is a string drawn verbatim from the source. The
 match rules:
@@ -134,10 +135,11 @@ tells the LLM to extend the string with neighbor text.
 ```
 
 `outline_normalizations` is optional. Include an entry per section
-that uses non-canonical outline markers (e.g. uppercase letters at the
-top level). Each entry tells the formatter what the source's marker
-style looks like at each level so it can rewrite to canonical
-`1)`/`a)`/`i)`/`(1)`/`(a)`/`(i)` before Rules 1/2/3 process the doc.
+that uses outline markers that don't match the standard list format
+(e.g. uppercase Roman numerals at the top level). Each entry tells the
+formatter what the source's marker style looks like at each level so
+it can rewrite to the standard list format
+(`A.`/`1.`/`a.`/`(1)`/`(a)`/`(i)`) before Rules 1/2/3 process the doc.
 
 Schema:
 
@@ -168,12 +170,12 @@ days` are NOT falsely matched.
 The Rule 0 rewrite walks paragraphs in the section, tracks per-level
 counters with parent-aware resets (any higher-level marker resets the
 counters below it), and substitutes each matched marker with the
-canonical marker for that level: level 0 → `1)` `2)` ..., level 1 →
-`a)` `b)` ..., level 2 → `i)` `ii)` ..., level 3 → `(1)` `(2)` ...,
-level 4 → `(a)` `(b)` ..., level 5 → `(i)` `(ii)` .... Both the
-leading marker of a paragraph and any embedded markers inside it are
-rewritten — so an inline `1) X ... or 2) Y` inside an A-level item
-becomes inline `a) X ... or b) Y` in the canonical form.
+standard-list-format marker for that level: level 0 → `A.` `B.` ...,
+level 1 → `1.` `2.` ..., level 2 → `a.` `b.` ..., level 3 → `(1)`
+`(2)` ..., level 4 → `(a)` `(b)` ..., level 5 → `(i)` `(ii)` ....
+Both the leading marker of a paragraph and any embedded markers inside
+it are rewritten — so an inline `1) X ... or 2) Y` inside an A-level
+item becomes inline `a. X ... or b. Y` in the standard form.
 
 In the example above:
 
@@ -270,13 +272,17 @@ Cross-cutting (rarely edited via `format.md` changes alone):
 5. **If goldens pass**: the change had no observable effect on
    cgl/seic_do — done. Commit `format.md` + script changes together.
 6. **If goldens fail**: do NOT silently regenerate. Surface the
-   divergence to the user so they can see what changed. Two good ways:
-   - Open the produced `.docx` (from `--keep`) in Word via the
-     `word-bridge` skill so the user can visually compare against the
-     prior golden in real Word rendering. This is the high-fidelity
-     path — visual review catches things that XML diffs gloss over.
-   - Summarize the canonical XML diff in plain language for the user
-     ("section headings are now 16pt instead of 14pt", etc.).
+   divergence to the user so they can see what changed.
+
+   The default path is visual comparison via `word-bridge`: open the
+   produced `.docx` (from `--keep`) in Word so the user can compare
+   against the prior golden in real Word rendering. Visual review
+   catches things that XML diffs gloss over.
+
+   Only fall back to summarizing the canonical XML diff in plain
+   language ("section headings are now 16pt instead of 14pt", etc.)
+   if `word-bridge` is unavailable or the user explicitly asks for a
+   text-only diff.
 
    Then, **only after the user confirms intent**:
    - If the diff matches the spec change → regenerate the golden as a
@@ -298,3 +304,15 @@ If a `format.md` change introduces a new *category* of document part
 - The relevant rule script — handle the new category
 
 Worth scanning all three when the spec gains a new concept.
+
+## Coding Info
+
+The section heading formatting is carried by the `Heading 2` style
+definition in `styles.xml`, not by run-level character overrides. Rule 1
+injects/overwrites the `Heading 2` style def to match these values and
+leaves the runs themselves bare.
+
+Body styling is also installed at the OOXML doc-default level
+(`<w:docDefaults><w:rPrDefault>`) so anything that doesn't override —
+notably the list markers, whose canonical level definitions omit
+run formatting — inherits Inter / 11pt / black.
