@@ -5,3 +5,4 @@ __pycache__/
 ~$*
 *.ast.json
 .claude/
+.DS_Store
