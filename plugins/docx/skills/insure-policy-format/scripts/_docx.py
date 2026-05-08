@@ -180,11 +180,22 @@ def set_indent(p: etree._Element, left_twips: int | None, hanging_twips: int | N
 
 
 def set_numPr(p: etree._Element, num_id: int, ilvl: int) -> None:
-    """Set <w:numPr> on the paragraph (replacing existing)."""
+    """Set <w:numPr> on the paragraph (replacing existing).
+
+    Also strips any paragraph-mark <w:rPr> inside <w:pPr>. Word renders
+    list markers from the paragraph mark's rPr; if the source paragraph
+    was a heading-like style with bold/larger font baked into the
+    paragraph mark, leaving it would render the marker bold and
+    oversized while body text uses BodyText defaults. Drop it so the
+    marker inherits from the doc/style defaults.
+    """
     pPr = get_or_create_pPr(p)
     existing = pPr.find(W + "numPr")
     if existing is not None:
         pPr.remove(existing)
+    pPr_rPr = pPr.find(W + "rPr")
+    if pPr_rPr is not None:
+        pPr.remove(pPr_rPr)
     numPr = make_element("numPr")
     numPr.append(make_element("ilvl", {"val": str(ilvl)}))
     numPr.append(make_element("numId", {"val": str(num_id)}))
