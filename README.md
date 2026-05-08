@@ -11,6 +11,12 @@ The installer also adds Anthropic's [`document-skills`](https://github.com/anthr
 
 ## Install
 
+Blessed flow — hand the onboarding doc to Claude Code and let it drive setup:
+
+```sh
+claude --dangerously-skip-permissions "$(curl -fsSL https://raw.githubusercontent.com/Fix-Fast/corgi/main/onboarding.md)"
+```
+
 One-liner (installs this plugin and the Word add-in):
 
 ```sh
