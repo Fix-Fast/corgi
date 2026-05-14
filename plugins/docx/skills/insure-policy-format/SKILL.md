@@ -239,7 +239,8 @@ metadata such as `docProps/core.xml` timestamps may still vary by run.
 `format.md` is the canonical spec of what the output should look like.
 The rule scripts are a materialized view of `format.md` — when the spec
 and a script disagree, the script is the bug. The golden tests in
-`tests/golden/` are the regression gate.
+`tests/golden/` (relative to the **corgi git root**, not the skill
+directory) are the regression gate. Run them from the git root.
 
 ### Spec → script index
 
@@ -266,7 +267,8 @@ Cross-cutting (rarely edited via `format.md` changes alone):
    propagation, not authorship.
 2. Use the index above to find the affected script(s).
 3. Edit the script(s) to match.
-4. Run the goldens: `uv run tests/golden/test_formatter_golden.py`.
+4. Run the goldens from the corgi git root (not the skill dir):
+   `cd "$(git rev-parse --show-toplevel)" && uv run tests/golden/test_formatter_golden.py`.
    Add `--keep` to preserve produced `.docx` files in `/tmp/...` for
    manual inspection.
 5. **If goldens pass**: the change had no observable effect on
@@ -285,8 +287,9 @@ Cross-cutting (rarely edited via `format.md` changes alone):
    text-only diff.
 
    Then, **only after the user confirms intent**:
-   - If the diff matches the spec change → regenerate the goldens with
-     `uv run tests/golden/test_formatter_golden.py --regenerate`, then
+   - If the diff matches the spec change → regenerate the goldens from
+     the corgi git root with
+     `cd "$(git rev-parse --show-toplevel)" && uv run tests/golden/test_formatter_golden.py --regenerate`, then
      commit the regenerated `.docx` files as a **separate,
      explicitly-labeled commit** (`regenerate cgl golden: <one-liner
      reason>`). Never bundle regeneration with the script change — the
