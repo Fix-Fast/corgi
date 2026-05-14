@@ -9,6 +9,24 @@ Deterministic reformatter for Corgi-Tech insurance policies. Ships with
 this plugin as a self-contained Python CLI; `uv` resolves its deps on
 first run via PEP 723 inline script metadata — no install step.
 
+## After editing the formatting rules locally
+
+If the user has just changed any formatting rules in this skill (or in
+the bundled CLI) inside their local `corgi` checkout, you — the
+assistant — must do the following before exiting the turn:
+
+1. Bump the **minor** version in
+   `plugins/docx/.claude-plugin/plugin.json` (e.g. `0.10.1` → `0.11.0`).
+   This is what makes Claude Code notice the change.
+2. Tell the user, in plain language, to type `/reload-plugins` in their
+   Claude Code session so the new version is picked up. Auto-update is
+   on for the `corgi` marketplace, so no manual `marketplace update` /
+   `install` is needed — but the running session is still holding the
+   old copy until they reload.
+
+Do this every time formatting rules change locally, even for small
+tweaks. The non-technical reader will not know to do it themselves.
+
 Packaged docs:
 
 - Human-facing rules: `format.md`

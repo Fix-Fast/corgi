@@ -30,15 +30,22 @@ All plugin operations use the `claude plugin` CLI subcommand via Bash, **not** t
 - HTTPS clone of a public repo is anonymous — no GitHub account or SSH key is needed for this step.
 - After clone, `cd <chosen-path>` so subsequent git operations target the clone.
 
-## Step 5 — Register the clone as a local marketplace and install
+## Step 5 — Register the clone as a local marketplace, enable auto-update, and install
 
 - `claude plugin marketplace add <chosen-path>` via Bash.
+- Enable auto-update on the marketplace by setting `extraKnownMarketplaces.corgi.autoUpdate = true` in `~/.claude/settings.json`. As of this writing the `claude plugin marketplace add` CLI does not expose an `--auto-update` flag, so edit the JSON directly (use `uv run python -c "..."` with stdlib `json` to read/modify/write — keep it atomic, don't shell out to `sed`). The resulting marketplace entry should look like:
+  ```json
+  "corgi": {
+    "source": { "source": "directory", "path": "<chosen-path>" },
+    "autoUpdate": true
+  }
+  ```
 - `claude plugin install docx@corgi` via Bash.
 
 ## Step 6 — Verify and hand off
 
-- Re-read `~/.claude/plugins/installed_plugins.json`. Confirm `docx@corgi` is present and its `installPath` reflects the new local install (it should point inside `<chosen-path>`, not `~/.claude/plugins/cache/...`).
+- Re-read `~/.claude/plugins/installed_plugins.json`. Confirm `docx@corgi` is present.
 - Tell the user:
   - Where the working clone lives (absolute path).
-  - That edits should be made in that clone, then `claude plugin marketplace update corgi` + `claude plugin install docx@corgi` to pick them up locally.
+  - That auto-update is on for the `corgi` marketplace, so edits in that clone are picked up automatically — they just need to run `/reload-plugins` in their Claude Code session for changes to take effect in the running session.
   - That **pushing** to the upstream repo requires a GitHub account with write access plus either a personal access token (HTTPS) or SSH key. If they don't have one yet, point them at https://github.com/settings/tokens or https://docs.github.com/en/authentication/connecting-to-github-with-ssh — don't try to set this up for them. Add a note to CLAUDE.md locally if they do not have a github account setup.
